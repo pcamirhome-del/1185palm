@@ -1,0 +1,6281 @@
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+import React, { useEffect, useRef, useState } from 'react';
+import { useRegisterSW } from 'virtual:pwa-register/react';
+import {
+  Store,
+  PhoneCall,
+  Car,
+  Users,
+  Settings,
+  X,
+  CheckCircle2,
+  Radio,
+  FileText,
+  ShoppingBag,
+  RefreshCw,
+  Sun,
+  Moon,
+} from 'lucide-react';
+import {
+  AdminActivityLogItem,
+  AdminMessage,
+  AuthSessionLogItem,
+  ChatModerationPenalty,
+  CommentEmojiReactionType,
+  CommunityCommentItem,
+  CommunityCommentReply,
+  CommunityPostItem,
+  CommunityPostStatus,
+  CommunityPostType,
+  CommunityReportReason,
+  LiveChatMessageItem,
+  MainSectionId,
+  MentionNotificationItem,
+  PlatformDatabaseState,
+  PlatformSettings,
+  PopupAdConfig,
+  PostPrivacyLevel,
+  PrivateChatMessageItem,
+  PrivateChatReportItem,
+  PrivateChatStatus,
+  ServicePhoneEntry,
+  SquareMovingAd,
+  StoreCommentItem,
+  StoreListingItem,
+  StoreReplyItem,
+  TawsilaRideItem,
+  TopBannerAd,
+  UserAccount,
+  UtilitySubmissionItem,
+} from './types';
+import {
+  createSquareAdSvg,
+  findLinkedStoreForAd,
+  getEffectiveOnlineDisplayCount,
+  getOrCreateVisitorId,
+  isAdLinkedToStore,
+  isPermanentDreamPlazaStore,
+  manageUnifiedUserSession,
+  mergeViewsByHourMaps,
+  RealOnlinePresenceStats,
+  recordSystemErrorLog,
+  removeCurrentTabPresence,
+  storageEngine,
+  subscribePresenceBroadcast,
+  syncRealOnlinePresence,
+} from './services/storageService';
+import { FluentButton, FluentModal, useGlobalFluentReveal } from './components/FluentUI';
+import { OfflineIndicator } from './components/PWAInstallPrompt';
+import { HeaderAndAdPackages } from './components/HeaderAndAdPackages';
+import { TopBannersAndSquareAds } from './components/TopBannersAndSquareAds';
+import { AuthModal } from './components/AuthModal';
+import { FooterAndContactModal } from './components/FooterAndContactModal';
+import { PortalSectionsWorkspace } from './components/PortalSectionsWorkspace';
+import { CommunityHubView } from './components/CommunityHubView';
+import { FacebookBottomNavBar } from './components/SocialBottomBarAndProfile';
+
+interface SectionErrorBoundaryProps {
+  sectionName: string;
+  children: React.ReactNode;
+}
+
+interface SectionErrorBoundaryState {
+  hasError: boolean;
+  errorMessage: string;
+}
+
+class SectionErrorBoundary extends React.Component<
+  SectionErrorBoundaryProps,
+  SectionErrorBoundaryState
+> {
+  declare props: Readonly<SectionErrorBoundaryProps>;
+  state: SectionErrorBoundaryState = {
+    hasError: false,
+    errorMessage: '',
+  };
+
+  static getDerivedStateFromError(error: unknown): SectionErrorBoundaryState {
+    const msg =
+      error instanceof Error ? error.message : String(error || 'Render Error');
+    return {
+      hasError: true,
+      errorMessage: msg,
+    };
+  }
+
+  componentDidCatch(error: unknown, errorInfo: React.ErrorInfo) {
+    const compStack =
+      errorInfo?.componentStack
+        ?.split('\n')
+        .map((s) => s.trim())
+        .filter(Boolean)[0] || this.props.sectionName;
+    recordSystemErrorLog(error, `SectionErrorBoundary (${compStack})`);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="p-6 rounded-2xl bg-[#112240] border-2 border-amber-400/70 text-center space-y-3 my-4">
+          <div className="text-sm sm:text-base font-extrabold text-amber-300">
+            تم احتواء خطأ عارض في هذا القسم دون توقف التطبيق
+          </div>
+          <p className="text-xs text-[#94A3B8] font-mono-tabular break-words max-w-lg mx-auto">
+            {this.state.errorMessage}
+          </p>
+          <div className="pt-1">
+            <button
+              type="button"
+              onClick={() => this.setState({ hasError: false, errorMessage: '' })}
+              className="px-4 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 text-white text-xs font-extrabold cursor-pointer shadow"
+            >
+              إعادة تنشيط القسم فوراً
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+export default function App() {
+  // Activate Windows 10 Fluent Reveal Highlight & Glowing Borders on Mouse Hover & Mobile Touch
+  useGlobalFluentReveal();
+
+  const [themeMode, setThemeMode] = useState<'dark' | 'light'>(() => {
+    try {
+      const saved = localStorage.getItem('nakhil_1185_theme_mode_v1');
+      return saved === 'light' ? 'light' : 'dark';
+    } catch {
+      return 'dark';
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('nakhil_1185_theme_mode_v1', themeMode);
+    } catch {
+      // ignore
+    }
+    document.documentElement.classList.toggle('theme-light', themeMode === 'light');
+  }, [themeMode]);
+
+  useEffect(() => {
+    const handleGlobalWindowError = (event: ErrorEvent) => {
+      const msg = String(event.message || '');
+      if (
+        !msg ||
+        msg.includes('ResizeObserver') ||
+        msg.includes('WebSocket') ||
+        msg.includes('vite')
+      ) {
+        return;
+      }
+      recordSystemErrorLog(
+        event.error || msg,
+        event.filename ? `Window (${event.filename.split('/').pop()})` : 'Window.onerror'
+      );
+    };
+    const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
+      const reasonStr =
+        event.reason instanceof Error
+          ? event.reason.message
+          : String(event.reason || '');
+      if (
+        !reasonStr ||
+        reasonStr.includes('WebSocket') ||
+        reasonStr.includes('vite') ||
+        reasonStr.includes('AbortError')
+      ) {
+        return;
+      }
+      recordSystemErrorLog(event.reason || reasonStr, 'UnhandledPromiseRejection');
+    };
+    window.addEventListener('error', handleGlobalWindowError);
+    window.addEventListener('unhandledrejection', handleUnhandledRejection);
+    return () => {
+      window.removeEventListener('error', handleGlobalWindowError);
+      window.removeEventListener('unhandledrejection', handleUnhandledRejection);
+    };
+  }, []);
+
+  const [dbState, setDbState] = useState<PlatformDatabaseState>(() => {
+    const boot = manageUnifiedUserSession({ action: 'bootstrap' });
+    return boot.state;
+  });
+
+  const [currentUser, setCurrentUser] = useState<UserAccount | null>(() => {
+    const boot = manageUnifiedUserSession({ action: 'bootstrap' });
+    return boot.user;
+  });
+
+  const [activeSection, setActiveSection] = useState<MainSectionId>(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const urlSection = params.get('section');
+      if (
+        urlSection === 'directory' ||
+        urlSection === 'services_numbers' ||
+        urlSection === 'tawsila' ||
+        urlSection === 'community' ||
+        urlSection === 'utilities' ||
+        urlSection === 'buy_sell' ||
+        urlSection === 'settings' ||
+        urlSection === 'home_feed' ||
+        urlSection === 'profile'
+      ) {
+        return urlSection;
+      }
+      if (params.get('storeId')) {
+        return 'directory';
+      }
+      const saved = sessionStorage.getItem('nakhil_1185_active_section_v1');
+      if (
+        saved === 'directory' ||
+        saved === 'services_numbers' ||
+        saved === 'tawsila' ||
+        saved === 'community' ||
+        saved === 'utilities' ||
+        saved === 'buy_sell' ||
+        saved === 'settings' ||
+        saved === 'home_feed' ||
+        saved === 'profile'
+      ) {
+        return saved;
+      }
+    } catch {
+      // ignore
+    }
+    return 'directory';
+  });
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState<boolean>(false);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState<boolean>(false);
+  const [viewedProfileUsername, setViewedProfileUsername] = useState<
+    string | null
+  >(null);
+  const [externalJumpTarget, setExternalJumpTarget] = useState<{
+    postId: string;
+    commentId?: string;
+    tick: number;
+  } | null>(null);
+
+  // External triggers for Global Private Chat (from Settings -> عدد المتصلين الآن and Login External Notification)
+  const [externalOpenChatTarget, setExternalOpenChatTarget] = useState<{
+    partnerId: string;
+    partnerUsername: string;
+    tick: number;
+  } | null>(null);
+  const [externalOpenHistoryModalTick, setExternalOpenHistoryModalTick] =
+    useState<number>(0);
+  const [externalLoginNotification, setExternalLoginNotification] = useState<{
+    senderUsername: string;
+    partnerId: string;
+    partnerUsername: string;
+    text: string;
+    tick: number;
+  } | null>(null);
+  const [loginWelcomeToast, setLoginWelcomeToast] = useState<string>('');
+  const [cloudWriteErrorToast, setCloudWriteErrorToast] = useState<string>('');
+  const [pwaUpdateToast, setPwaUpdateToast] = useState<string>('');
+  const swRefreshingRef = useRef<boolean>(false);
+
+  const {
+    needRefresh: [needRefresh, setNeedRefresh],
+    updateServiceWorker,
+  } = useRegisterSW({
+    immediate: true,
+    onRegisteredSW(_swUrl, registration) {
+      if (!registration) return;
+      registration.update().catch(() => {});
+      const checkSwUpdate = () => {
+        registration.update().catch(() => {});
+      };
+      const intervalId = window.setInterval(checkSwUpdate, 30 * 1000);
+      const handleVisibilityChange = () => {
+        if (document.visibilityState === 'visible') {
+          checkSwUpdate();
+        }
+      };
+      document.addEventListener('visibilitychange', handleVisibilityChange);
+      window.addEventListener('online', checkSwUpdate);
+      return () => {
+        window.clearInterval(intervalId);
+        document.removeEventListener('visibilitychange', handleVisibilityChange);
+        window.removeEventListener('online', checkSwUpdate);
+      };
+    },
+    onNeedRefresh() {
+      setPwaUpdateToast('تم إطلاق تحديث جديد للموقع، جاري التحديث...');
+    },
+    onRegisterError(error) {
+      console.warn('SW registration error:', error);
+    },
+  });
+
+  useEffect(() => {
+    if (!needRefresh && !pwaUpdateToast) return;
+    setPwaUpdateToast('تم إطلاق تحديث جديد للموقع، جاري التحديث...');
+    const timer = window.setTimeout(async () => {
+      try {
+        if ('caches' in window) {
+          const keys = await window.caches.keys();
+          await Promise.all(
+            keys
+              .filter((k) => k.includes('live-app-shell') || k.includes('workbox-precache'))
+              .map((k) => window.caches.delete(k))
+          );
+        }
+      } catch {
+        // ignore cache delete errors
+      }
+      try {
+        await updateServiceWorker(true);
+      } catch {
+        // ignore
+      }
+      setNeedRefresh(false);
+      if (!swRefreshingRef.current) {
+        swRefreshingRef.current = true;
+        window.location.reload();
+      }
+    }, 1200);
+    return () => window.clearTimeout(timer);
+  }, [needRefresh, pwaUpdateToast, updateServiceWorker, setNeedRefresh]);
+
+  useEffect(() => {
+    if (!('serviceWorker' in navigator)) return;
+    const hadControllerOnMount = Boolean(navigator.serviceWorker.controller);
+    const handleControllerChange = () => {
+      if (!hadControllerOnMount) return;
+      if (swRefreshingRef.current) return;
+      swRefreshingRef.current = true;
+      setPwaUpdateToast('تم إطلاق تحديث جديد للموقع، جاري التحديث...');
+      window.setTimeout(() => {
+        window.location.reload();
+      }, 900);
+    };
+    navigator.serviceWorker.addEventListener('controllerchange', handleControllerChange);
+    return () => {
+      navigator.serviceWorker.removeEventListener('controllerchange', handleControllerChange);
+    };
+  }, []);
+
+  useEffect(() => {
+    try {
+      sessionStorage.setItem('nakhil_1185_active_section_v1', activeSection);
+    } catch {
+      // ignore
+    }
+  }, [activeSection]);
+
+  const [connStatus, setConnStatus] = useState<
+    'local' | 'firebase_connected' | 'firebase_error'
+  >('local');
+  const [connMessage, setConnMessage] = useState<string>(
+    'التخزين الفوري السريع في المتصفح نشط (Instant Browser Cache)'
+  );
+
+  // 100% Real Live Online Presence Counter (Registered Users + Guest Visitors)
+  const [onlineStats, setOnlineStats] = useState<RealOnlinePresenceStats>(() =>
+    syncRealOnlinePresence(currentUser)
+  );
+  // 5-second tick so customOnlineCount fluctuates every 5 seconds (-5, +20, -50, +20, etc.) and never drops below 200
+  const [onlineFluctuationTick, setOnlineFluctuationTick] = useState<number>(() =>
+    Date.now()
+  );
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setOnlineFluctuationTick(Date.now());
+    }, 5000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const effectiveOnlineCount = getEffectiveOnlineDisplayCount(
+    onlineStats.totalOnline,
+    dbState.settings.customOnlineCount,
+    onlineFluctuationTick
+  );
+
+  useEffect(() => {
+    document.title = dbState.settings.siteName || 'موقع خدمات التخيل 1185';
+  }, [dbState.settings.siteName]);
+
+  // If the Entry Popup Ad is NOT active on initial entry and user is not logged in, show Login/Register Modal
+  useEffect(() => {
+    const isPopupActive =
+      dbState.popupAd &&
+      dbState.popupAd.active &&
+      (!dbState.popupAd.expiresAt ||
+        new Date(dbState.popupAd.expiresAt).getTime() > Date.now());
+    if (!isPopupActive && !currentUser) {
+      setIsAuthModalOpen(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    const sendHeartbeat = () => {
+      setOnlineStats(syncRealOnlinePresence(currentUser, false));
+    };
+    const refreshFromBroadcast = () => {
+      setOnlineStats(syncRealOnlinePresence(currentUser, true));
+    };
+    sendHeartbeat();
+
+    const interval = setInterval(sendHeartbeat, 2000);
+    const unsubBroadcast = subscribePresenceBroadcast(refreshFromBroadcast);
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        sendHeartbeat();
+      }
+    };
+    const handleBeforeUnload = () => {
+      removeCurrentTabPresence();
+    };
+
+    window.addEventListener('storage', refreshFromBroadcast);
+    document.addEventListener('visibilitychange', handleVisibility);
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    window.addEventListener('pagehide', handleBeforeUnload);
+
+    return () => {
+      clearInterval(interval);
+      unsubBroadcast();
+      window.removeEventListener('storage', refreshFromBroadcast);
+      document.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      window.removeEventListener('pagehide', handleBeforeUnload);
+    };
+  }, [currentUser]);
+
+  // Automatic Public Chat Clear Timer controlled by Admin Gear (liveChatAutoClearMinutes) - ticks every 1 second for instant clearing
+  useEffect(() => {
+    const autoClearMins = dbState.settings.liveChatAutoClearMinutes ?? 0;
+    if (autoClearMins <= 0) return;
+
+    const checkAndAutoClear = () => {
+      // Wait for initial Firebase onSnapshot hydration before writing any background state changes
+      if (!storageEngine.isHydratedFromCloud()) return;
+      setDbState((prev) => {
+        const mins = prev.settings.liveChatAutoClearMinutes ?? 0;
+        if (mins <= 0) return prev;
+        if (!prev.liveChatMessages || prev.liveChatMessages.length === 0) {
+          return prev;
+        }
+        const lastClearedMs = prev.settings.liveChatLastClearedAt
+          ? new Date(prev.settings.liveChatLastClearedAt).getTime()
+          : 0;
+        const nowMs = Date.now();
+        if (nowMs - lastClearedMs >= mins * 60 * 1000) {
+          const nextState: PlatformDatabaseState = {
+            ...prev,
+            liveChatMessages: [],
+            settings: {
+              ...prev.settings,
+              liveChatLastClearedAt: new Date(nowMs).toISOString(),
+            },
+          };
+          storageEngine.persistChatFast(nextState, currentUser?.id);
+          return nextState;
+        }
+        return prev;
+      });
+    };
+
+    checkAndAutoClear();
+    const timer = setInterval(checkAndAutoClear, 1000);
+    return () => clearInterval(timer);
+  }, [
+    dbState.settings.liveChatAutoClearMinutes,
+    dbState.settings.liveChatLastClearedAt,
+    currentUser?.id,
+  ]);
+
+  useEffect(() => {
+    const unsubData = storageEngine.subscribe((nextState) => {
+      setDbState(nextState);
+    });
+    const unsubStatus = storageEngine.subscribeStatus((status, msg) => {
+      setConnStatus(status);
+      if (msg) setConnMessage(msg);
+    });
+    const unsubWriteError = storageEngine.subscribeCloudWriteError((errMsg) => {
+      setCloudWriteErrorToast(errMsg);
+    });
+
+    storageEngine.initializeSync(dbState.settings.firebase, dbState);
+
+    return () => {
+      unsubData();
+      unsubStatus();
+      unsubWriteError();
+    };
+  }, []);
+
+  // Unified session sync: secures user in MemoryStorage & LocalStorage and prevents logout during Firebase delays
+  useEffect(() => {
+    const synced = manageUnifiedUserSession({
+      action: 'sync',
+      user: currentUser,
+      candidateUsers: dbState.users,
+    });
+    if (!synced.user && currentUser) {
+      setCurrentUser(null);
+    } else if (synced.user && !currentUser) {
+      setCurrentUser(synced.user);
+    } else if (
+      synced.user &&
+      currentUser &&
+      !dbState.users.some(
+        (u) =>
+          u.id === synced.user?.id ||
+          u.username.trim().toLowerCase() ===
+            synced.user?.username.trim().toLowerCase()
+      )
+    ) {
+      // Heal dbState.users from MemoryStorage if Firebase response was delayed or partial
+      setDbState((prev) => ({
+        ...prev,
+        users: synced.securedUsers,
+      }));
+    }
+  }, [dbState.users, currentUser]);
+
+  const updateAndPersist = (
+    updater: (prev: PlatformDatabaseState) => PlatformDatabaseState
+  ) => {
+    setDbState((prev) => {
+      const next = updater(prev);
+      if (next !== prev) {
+        storageEngine.persistChatFast(next, currentUser?.id);
+      }
+      storageEngine.persistState(next, currentUser?.id).catch((err: unknown) => {
+        recordSystemErrorLog(err, 'App.updateAndPersist');
+        const msg =
+          err instanceof Error
+            ? err.message
+            : 'تعذر حفظ البيانات في خادم Firebase';
+        setCloudWriteErrorToast(
+          `تنبيه: تعذر الحفظ في السحابة (${msg}). تأكد من الاتصال بالإنترنت أو إعدادات Firebase.`
+        );
+      });
+      return next;
+    });
+  };
+
+  const updateAndPersistChatFast = (
+    updater: (prev: PlatformDatabaseState) => PlatformDatabaseState
+  ) => {
+    setDbState((prev) => {
+      const next = updater(prev);
+      if (next !== prev) {
+        storageEngine.persistChatFast(next, currentUser?.id);
+      }
+      return next;
+    });
+  };
+
+  const visitorId = getOrCreateVisitorId(currentUser);
+
+  const triggerLoginExternalNotification = (loggedUser: UserAccount) => {
+    // Show ONLY the welcome notification with the account holder's name, and do NOT show the chat notification on login
+    setExternalLoginNotification(null);
+    setLoginWelcomeToast(`مرحباً بك ${loggedUser.username}`);
+    setTimeout(() => {
+      setLoginWelcomeToast('');
+    }, 5000);
+  };
+
+  const appendAdminActivityLogToSettings = (
+    settings: PlatformSettings,
+    actionType: string,
+    targetName: string
+  ): PlatformSettings => {
+    if (
+      !currentUser ||
+      (currentUser.role !== 'admin' && currentUser.role !== 'moderator')
+    ) {
+      return settings;
+    }
+    const newEntry: AdminActivityLogItem = {
+      id: `act-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      actorUsername: currentUser.username,
+      actorRole: currentUser.role,
+      actionType,
+      targetName,
+      description: `${actionType}: ${targetName}`,
+      createdAt: new Date().toISOString(),
+    };
+    return {
+      ...settings,
+      adminActivityLogs: [
+        newEntry,
+        ...(settings.adminActivityLogs || []),
+      ].slice(0, 200),
+      updatedAt: Date.now(),
+    };
+  };
+
+  const appendAuthSessionAndVisitToSettings = (
+    settings: PlatformSettings,
+    user: UserAccount,
+    eventType: 'login' | 'logout'
+  ): PlatformSettings => {
+    const nowIso = new Date().toISOString();
+    const todayKey = nowIso.slice(0, 10);
+    const sessionItem: AuthSessionLogItem = {
+      id: `auth-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      userId: user.id,
+      username: user.username,
+      role: user.role,
+      eventType,
+      createdAt: nowIso,
+    };
+    const nextAuthLogs = [
+      sessionItem,
+      ...(settings.authSessionLogs || []),
+    ].slice(0, 200);
+
+    const nextVisitsMap = { ...(settings.userDailyVisitsMap || {}) };
+    if (eventType === 'login') {
+      const normKey = user.username.trim().toLowerCase();
+      const existing = nextVisitsMap[user.id] || nextVisitsMap[normKey];
+      const nextDaily =
+        existing && existing.dateKey === todayKey
+          ? (existing.dailyCount || 0) + 1
+          : 1;
+      const nextTotal = (existing?.totalCount || 0) + 1;
+      const visitRecord = {
+        userId: user.id,
+        username: user.username,
+        dateKey: todayKey,
+        dailyCount: nextDaily,
+        totalCount: nextTotal,
+        lastVisitAt: nowIso,
+      };
+      nextVisitsMap[user.id] = visitRecord;
+      nextVisitsMap[normKey] = visitRecord;
+    }
+
+    return {
+      ...settings,
+      authSessionLogs: nextAuthLogs,
+      userDailyVisitsMap: nextVisitsMap,
+      updatedAt: Date.now(),
+    };
+  };
+
+  // Count daily visit once per browser session for an already logged-in user
+  useEffect(() => {
+    if (!currentUser) return;
+    const todayKey = new Date().toISOString().slice(0, 10);
+    const sessionFlagKey = `nakhil_daily_visit_${currentUser.id}_${todayKey}`;
+    try {
+      if (sessionStorage.getItem(sessionFlagKey)) return;
+      sessionStorage.setItem(sessionFlagKey, '1');
+    } catch {
+      return;
+    }
+    const nowIso = new Date().toISOString();
+    const normKey = currentUser.username.trim().toLowerCase();
+    updateAndPersist((prev) => {
+      const nextVisitsMap = { ...(prev.settings.userDailyVisitsMap || {}) };
+      const existing = nextVisitsMap[currentUser.id] || nextVisitsMap[normKey];
+      const nextDaily =
+        existing && existing.dateKey === todayKey
+          ? (existing.dailyCount || 0) + 1
+          : 1;
+      const nextTotal = (existing?.totalCount || 0) + 1;
+      const visitRecord = {
+        userId: currentUser.id,
+        username: currentUser.username,
+        dateKey: todayKey,
+        dailyCount: nextDaily,
+        totalCount: nextTotal,
+        lastVisitAt: nowIso,
+      };
+      nextVisitsMap[currentUser.id] = visitRecord;
+      nextVisitsMap[normKey] = visitRecord;
+      return {
+        ...prev,
+        settings: {
+          ...prev.settings,
+          userDailyVisitsMap: nextVisitsMap,
+          updatedAt: Date.now(),
+        },
+      };
+    });
+  }, [currentUser?.id]);
+
+  // --- Authentication Handlers (with Unified Session Manager, MemoryStorage Lock & Instant Online Presence Broadcast) ---
+  const handleAuthenticate = (user: UserAccount, rememberMe: boolean) => {
+    const nowTs = Date.now();
+    const onlineUser: UserAccount = {
+      ...user,
+      isOnline: true,
+      updatedAt: nowTs,
+    };
+    const todayKey = new Date().toISOString().slice(0, 10);
+    try {
+      sessionStorage.setItem(`nakhil_daily_visit_${onlineUser.id}_${todayKey}`, '1');
+    } catch {
+      // ignore
+    }
+    // Secure user immediately in MemoryStorage + LocalStorage via Unified Session Manager
+    const securedSession = manageUnifiedUserSession({
+      action: 'login',
+      user: onlineUser,
+      rememberMe,
+      candidateUsers: dbState.users,
+    });
+    const activeLoggedUser = securedSession.user || onlineUser;
+    setCurrentUser(activeLoggedUser);
+    setViewedProfileUsername(activeLoggedUser.username);
+    setDbState((prev) => {
+      const exists = prev.users.some(
+        (u) =>
+          u.id === activeLoggedUser.id ||
+          u.username.trim().toLowerCase() ===
+            activeLoggedUser.username.trim().toLowerCase()
+      );
+      const nextUsers = exists
+        ? prev.users.map((u) =>
+            u.id === activeLoggedUser.id ||
+            u.username.trim().toLowerCase() ===
+              activeLoggedUser.username.trim().toLowerCase()
+              ? { ...u, ...activeLoggedUser, isOnline: true, updatedAt: nowTs }
+              : u
+          )
+        : [...prev.users, activeLoggedUser];
+      const uNameKey = `user:${activeLoggedUser.username.trim().toLowerCase()}`;
+      const accKey = activeLoggedUser.accountName
+        ? `acc:${activeLoggedUser.accountName.trim().toLowerCase()}`
+        : '';
+      const cleanedDeletedIds = (prev.deletedRecordIds || []).filter(
+        (id) =>
+          id !== activeLoggedUser.id &&
+          id !== uNameKey &&
+          (!accKey || id !== accKey) &&
+          !id.startsWith('user:') &&
+          !id.startsWith('acc:') &&
+          !id.startsWith('acct:')
+      );
+      const next: PlatformDatabaseState = {
+        ...prev,
+        users: nextUsers,
+        deletedRecordIds: cleanedDeletedIds,
+        settings: appendAuthSessionAndVisitToSettings(
+          prev.settings,
+          activeLoggedUser,
+          'login'
+        ),
+      };
+      storageEngine.saveAuthenticatedUser(activeLoggedUser, rememberMe, next);
+      storageEngine.persistState(next, activeLoggedUser.id);
+      return next;
+    });
+    setOnlineStats(syncRealOnlinePresence(activeLoggedUser, false));
+    triggerLoginExternalNotification(activeLoggedUser);
+  };
+
+  const handleRegisterNewUser = (newUser: UserAccount, rememberMe: boolean) => {
+    const nowTs = Date.now();
+    const onlineNewUser: UserAccount = {
+      ...newUser,
+      isOnline: true,
+      updatedAt: nowTs,
+    };
+    const todayKey = new Date().toISOString().slice(0, 10);
+    try {
+      sessionStorage.setItem(`nakhil_daily_visit_${onlineNewUser.id}_${todayKey}`, '1');
+    } catch {
+      // ignore
+    }
+    // Secure newly registered user immediately in MemoryStorage + LocalStorage via Unified Session Manager
+    const securedSession = manageUnifiedUserSession({
+      action: 'register',
+      user: onlineNewUser,
+      rememberMe,
+      candidateUsers: dbState.users,
+    });
+    const activeRegUser = securedSession.user || onlineNewUser;
+    setCurrentUser(activeRegUser);
+    setViewedProfileUsername(activeRegUser.username);
+    setDbState((prev) => {
+      const exists = prev.users.some(
+        (u) =>
+          u.id === activeRegUser.id ||
+          u.username.trim().toLowerCase() ===
+            activeRegUser.username.trim().toLowerCase()
+      );
+      const nextUsers = exists
+        ? prev.users.map((u) =>
+            u.id === activeRegUser.id ||
+            u.username.trim().toLowerCase() ===
+              activeRegUser.username.trim().toLowerCase()
+              ? activeRegUser
+              : u
+          )
+        : [...prev.users, activeRegUser];
+      const uNameKey = `user:${activeRegUser.username.trim().toLowerCase()}`;
+      const accKey = activeRegUser.accountName
+        ? `acc:${activeRegUser.accountName.trim().toLowerCase()}`
+        : '';
+      const cleanedDeletedIds = (prev.deletedRecordIds || []).filter(
+        (id) =>
+          id !== activeRegUser.id &&
+          id !== uNameKey &&
+          (!accKey || id !== accKey) &&
+          !id.startsWith('user:') &&
+          !id.startsWith('acc:') &&
+          !id.startsWith('acct:')
+      );
+      const next: PlatformDatabaseState = {
+        ...prev,
+        users: nextUsers,
+        deletedRecordIds: cleanedDeletedIds,
+        settings: appendAuthSessionAndVisitToSettings(
+          prev.settings,
+          activeRegUser,
+          'login'
+        ),
+      };
+      storageEngine.saveAuthenticatedUser(activeRegUser, rememberMe, next);
+      storageEngine.persistState(next, activeRegUser.id);
+      return next;
+    });
+    setOnlineStats(syncRealOnlinePresence(activeRegUser, false));
+    triggerLoginExternalNotification(activeRegUser);
+  };
+
+  const handleResetUserPassword = (userId: string, newPassword: string) => {
+    updateAndPersist((prev) => ({
+      ...prev,
+      users: prev.users.map((u) =>
+        u.id === userId ? { ...u, password: newPassword } : u
+      ),
+    }));
+  };
+
+  const handleLogout = () => {
+    const loggingOutUser = currentUser;
+    const loggingOutUserId = currentUser?.id;
+    setCurrentUser(null);
+    manageUnifiedUserSession({ action: 'logout' });
+    // Mark user offline when logging out
+    updateAndPersist((prev) => ({
+      ...prev,
+      users: loggingOutUserId
+        ? prev.users.map((u) =>
+            u.id === loggingOutUserId ? { ...u, isOnline: false } : u
+          )
+        : prev.users,
+      settings: loggingOutUser
+        ? appendAuthSessionAndVisitToSettings(
+            prev.settings,
+            loggingOutUser,
+            'logout'
+          )
+        : prev.settings,
+    }));
+    setOnlineStats(syncRealOnlinePresence(null, false));
+    if (activeSection === 'settings') {
+      setActiveSection('directory');
+    }
+  };
+
+  // --- Footer Contact Message to Admin Handler (Merges into existing message if account sent before, syncs in <15ms) ---
+  const handleSendMessageToAdmin = (
+    content: string,
+    senderUsername: string,
+    senderId: string
+  ) => {
+    const nowIso = new Date().toISOString();
+    const effectiveSenderId = senderId === 'guest' ? visitorId : senderId;
+    const cleanSenderName = senderUsername.trim();
+    const lowerSenderName = cleanSenderName.toLowerCase();
+
+    updateAndPersistChatFast((prev) => {
+      const existingIdx = prev.messages.findIndex((m) => {
+        if (
+          effectiveSenderId &&
+          m.senderId === effectiveSenderId &&
+          m.senderId !== 'guest'
+        ) {
+          return true;
+        }
+        return m.senderUsername.trim().toLowerCase() === lowerSenderName;
+      });
+
+      const newEntry = {
+        id: `th-${Date.now()}`,
+        sender: 'user' as const,
+        senderName: cleanSenderName,
+        text: content,
+        createdAt: nowIso,
+      };
+
+      if (existingIdx !== -1) {
+        const target = prev.messages[existingIdx];
+        const prevThread =
+          target.thread && target.thread.length > 0
+            ? target.thread
+            : [
+                {
+                  id: target.id,
+                  sender: 'user' as const,
+                  senderName: target.senderUsername,
+                  text: target.content,
+                  createdAt: target.createdAt,
+                },
+              ];
+        const updatedMsg: AdminMessage = {
+          ...target,
+          senderId: effectiveSenderId,
+          senderUsername: cleanSenderName,
+          content,
+          isRead: false,
+          updatedAt: nowIso,
+          thread: [...prevThread, newEntry],
+        };
+        const rest = prev.messages.filter((_, idx) => idx !== existingIdx);
+        return {
+          ...prev,
+          messages: [updatedMsg, ...rest],
+        };
+      }
+
+      const newMsg: AdminMessage = {
+        id: `msg-${Date.now()}`,
+        senderId: effectiveSenderId,
+        senderUsername: cleanSenderName,
+        content,
+        isRead: false,
+        unreadForUserCount: 0,
+        createdAt: nowIso,
+        updatedAt: nowIso,
+        thread: [newEntry],
+      };
+      return {
+        ...prev,
+        messages: [newMsg, ...prev.messages],
+      };
+    });
+  };
+
+  // --- Admin Reply to User Message (Notifies User's Bell Icon Instantaneously) ---
+  const handleAdminReplyToMessage = (messageId: string, replyText: string) => {
+    const cleanReply = replyText.trim();
+    if (!cleanReply) return;
+    const nowIso = new Date().toISOString();
+
+    updateAndPersistChatFast((prev) => {
+      const target = prev.messages.find((m) => m.id === messageId);
+      const targetSenderKey = target
+        ? target.senderUsername.trim().toLowerCase()
+        : '';
+
+      return {
+        ...prev,
+        messages: prev.messages.map((m) => {
+          const isMatch =
+            m.id === messageId ||
+            (targetSenderKey &&
+              m.senderUsername.trim().toLowerCase() === targetSenderKey);
+          if (!isMatch) return m;
+          const prevThread =
+            m.thread && m.thread.length > 0
+              ? m.thread
+              : [
+                  {
+                    id: m.id,
+                    sender: 'user' as const,
+                    senderName: m.senderUsername,
+                    text: m.content,
+                    createdAt: m.createdAt,
+                  },
+                ];
+          return {
+            ...m,
+            content: cleanReply,
+            isRead: true,
+            unreadForUserCount: (m.unreadForUserCount || 0) + 1,
+            updatedAt: nowIso,
+            thread: [
+              ...prevThread,
+              {
+                id: `adm-rep-${Date.now()}`,
+                sender: 'admin' as const,
+                senderName: 'إدارة الموقع',
+                text: cleanReply,
+                createdAt: nowIso,
+              },
+            ],
+          };
+        }),
+      };
+    });
+  };
+
+  // --- Reply from Bell Popup Modal (Supports both Admin replying to User and User replying to Admin instantaneously) ---
+  const handleUserReplyToAdminMessage = (
+    messageId: string,
+    replyText: string
+  ) => {
+    const cleanReply = replyText.trim();
+    if (!cleanReply) return;
+
+    // If Admin is replying from the Bell Popup Modal, route to Admin Reply handler so the user receives it in their Bell icon immediately
+    if (currentUser?.role === 'admin') {
+      handleAdminReplyToMessage(messageId, cleanReply);
+      return;
+    }
+
+    const nowIso = new Date().toISOString();
+    const senderLabel = currentUser?.username || 'زائر (غير مسجل)';
+
+    updateAndPersistChatFast((prev) => {
+      const target = prev.messages.find((m) => m.id === messageId);
+      const targetSenderKey = target
+        ? target.senderUsername.trim().toLowerCase()
+        : '';
+
+      return {
+        ...prev,
+        messages: prev.messages.map((m) => {
+          const isMatch =
+            m.id === messageId ||
+            (targetSenderKey &&
+              m.senderUsername.trim().toLowerCase() === targetSenderKey);
+          if (!isMatch) return m;
+          const prevThread =
+            m.thread && m.thread.length > 0
+              ? m.thread
+              : [
+                  {
+                    id: m.id,
+                    sender: 'user' as const,
+                    senderName: m.senderUsername,
+                    text: m.content,
+                    createdAt: m.createdAt,
+                  },
+                ];
+          return {
+            ...m,
+            content: cleanReply,
+            isRead: false,
+            unreadForUserCount: 0,
+            updatedAt: nowIso,
+            thread: [
+              ...prevThread,
+              {
+                id: `usr-rep-${Date.now()}`,
+                sender: 'user' as const,
+                senderName: senderLabel,
+                text: cleanReply,
+                createdAt: nowIso,
+              },
+            ],
+          };
+        }),
+      };
+    });
+  };
+
+  const handleMarkUserMessagesRead = (messageId?: string) => {
+    updateAndPersistChatFast((prev) => ({
+      ...prev,
+      messages: prev.messages.map((m) => {
+        if (messageId && m.id !== messageId) return m;
+        if (currentUser?.role === 'admin') {
+          return { ...m, isRead: true };
+        }
+        const belongsToMe = currentUser
+          ? m.senderId === currentUser.id ||
+            m.senderUsername.trim().toLowerCase() ===
+              currentUser.username.trim().toLowerCase() ||
+            Boolean(
+              currentUser.accountName &&
+                m.senderUsername.trim().toLowerCase() ===
+                  currentUser.accountName.trim().toLowerCase()
+            )
+          : m.senderId === visitorId;
+        if (!belongsToMe) return m;
+        return { ...m, unreadForUserCount: 0 };
+      }),
+    }));
+  };
+
+  // --- Stage 2: Directory Stores, Likes/Dislikes, Ratings, Comments, Replies, Import ---
+  const handleAddStore = (store: StoreListingItem) => {
+    try {
+      const cleanCategory = String(store.category || '').trim() || 'مول دريم بلازا';
+      const stampedStore: StoreListingItem = {
+        ...store,
+        id:
+          store.id && String(store.id).trim().length > 0
+            ? String(store.id).trim()
+            : `st-${Date.now()}`,
+        name: String(store.name || '').trim(),
+        category: cleanCategory,
+        updatedAt: Date.now(),
+      };
+      updateAndPersist((prev) => ({
+        ...prev,
+        stores: [stampedStore, ...prev.stores],
+        deletedRecordIds: (prev.deletedRecordIds || []).filter(
+          (id) => id !== stampedStore.id
+        ),
+      }));
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'حدث خطأ أثناء إضافة المحل';
+      setCloudWriteErrorToast(`فشل حفظ المحل الجديد: ${msg}`);
+    }
+  };
+
+  const handleUpdateStore = (updatedStore: StoreListingItem) => {
+    // التشديد على عدم تغيير أو نقل أي محل من أي قسم إلا في حالة تعديل Admin فقط
+    if (currentUser?.role !== 'admin') return;
+    try {
+      const cleanCategory =
+        String(updatedStore.category || '').trim() || 'مول دريم بلازا';
+      const stampedStore: StoreListingItem = {
+        ...updatedStore,
+        name: String(updatedStore.name || '').trim(),
+        category: cleanCategory,
+        updatedAt: Date.now(),
+      };
+      updateAndPersist((prev) => ({
+        ...prev,
+        stores: prev.stores.map((s) =>
+          s.id === stampedStore.id ? stampedStore : s
+        ),
+        settings: appendAdminActivityLogToSettings(
+          prev.settings,
+          'تعديل محل',
+          stampedStore.name
+        ),
+      }));
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'حدث خطأ أثناء تعديل المحل';
+      setCloudWriteErrorToast(`فشل حفظ تعديلات المحل: ${msg}`);
+    }
+  };
+
+  const handleGeneralizeStoreImageStyle = (styleVariant: 1 | 2) => {
+    const nowTs = Date.now();
+    updateAndPersist((prev) => ({
+      ...prev,
+      settings: {
+        ...prev.settings,
+        defaultStoreSvgStyle: styleVariant,
+        updatedAt: nowTs,
+      },
+      stores: prev.stores.map((s) => {
+        const realImgs = (s.menuImages || []).filter(
+          (img) => img && !img.startsWith('data:image/svg+xml')
+        );
+        if (realImgs.length > 0) {
+          return s;
+        }
+        const unifiedSvg = createSquareAdSvg(
+          s.name,
+          s.category,
+          styleVariant === 2 ? '#0F172A' : '#0284C7',
+          styleVariant
+        );
+        return {
+          ...s,
+          menuImages: [unifiedSvg],
+          updatedAt: nowTs,
+        };
+      }),
+    }));
+  };
+
+  const handleIncrementStoreViews = (storeId: string) => {
+    const nowTs = Date.now();
+    const hourKey = String(new Date().getHours());
+    updateAndPersist((prev) => {
+      const targetStore = prev.stores.find((s) => s.id === storeId);
+      if (!targetStore) return prev;
+
+      const linkedSquares = prev.squareAds.filter((a) =>
+        isAdLinkedToStore(a, targetStore)
+      );
+      const linkedBanners = prev.topBanners.filter((b) =>
+        isAdLinkedToStore(b, targetStore)
+      );
+      const popupLinked = isAdLinkedToStore(prev.popupAd, targetStore);
+
+      const baseViews = Math.max(
+        targetStore.viewsCount || 0,
+        ...linkedSquares.map((a) => a.viewsCount || 0),
+        ...linkedBanners.map((b) => b.viewsCount || 0),
+        popupLinked ? prev.popupAd.viewsCount || 0 : 0
+      );
+      const nextViews = baseViews + 1;
+
+      const baseCalls = Math.max(
+        targetStore.callClicksCount || 0,
+        ...linkedSquares.map((a) => a.callClicksCount || 0),
+        ...linkedBanners.map((b) => b.callClicksCount || 0),
+        popupLinked ? prev.popupAd.callClicksCount || 0 : 0
+      );
+      const baseWhatsapp = Math.max(
+        targetStore.whatsappClicksCount || 0,
+        ...linkedSquares.map((a) => a.whatsappClicksCount || 0),
+        ...linkedBanners.map((b) => b.whatsappClicksCount || 0),
+        popupLinked ? prev.popupAd.whatsappClicksCount || 0 : 0
+      );
+
+      const mergedHours = mergeViewsByHourMaps(
+        targetStore.viewsByHour,
+        ...linkedSquares.map((a) => a.viewsByHour),
+        ...linkedBanners.map((b) => b.viewsByHour),
+        popupLinked ? prev.popupAd.viewsByHour : undefined
+      );
+      const nextHours = {
+        ...mergedHours,
+        [hourKey]: (mergedHours[hourKey] || 0) + 1,
+      };
+
+      return {
+        ...prev,
+        stores: prev.stores.map((s) =>
+          s.id === storeId
+            ? {
+                ...s,
+                viewsCount: nextViews,
+                callClicksCount: baseCalls,
+                whatsappClicksCount: baseWhatsapp,
+                viewsByHour: nextHours,
+                updatedAt: nowTs,
+              }
+            : s
+        ),
+        squareAds: prev.squareAds.map((a) =>
+          isAdLinkedToStore(a, targetStore)
+            ? {
+                ...a,
+                storeId: a.storeId || targetStore.id,
+                viewsCount: nextViews,
+                adViewsSinceCreation: (a.adViewsSinceCreation || 0) + 1,
+                callClicksCount: baseCalls,
+                whatsappClicksCount: baseWhatsapp,
+                viewsByHour: nextHours,
+                updatedAt: nowTs,
+              }
+            : a
+        ),
+        topBanners: prev.topBanners.map((b) =>
+          isAdLinkedToStore(b, targetStore)
+            ? {
+                ...b,
+                storeId: b.storeId || targetStore.id,
+                viewsCount: nextViews,
+                adViewsSinceCreation: (b.adViewsSinceCreation || 0) + 1,
+                callClicksCount: baseCalls,
+                whatsappClicksCount: baseWhatsapp,
+                viewsByHour: nextHours,
+                updatedAt: nowTs,
+              }
+            : b
+        ),
+        popupAd: popupLinked
+          ? {
+              ...prev.popupAd,
+              storeId: prev.popupAd.storeId || targetStore.id,
+              viewsCount: nextViews,
+              adViewsSinceCreation: (prev.popupAd.adViewsSinceCreation || 0) + 1,
+              callClicksCount: baseCalls,
+              whatsappClicksCount: baseWhatsapp,
+              viewsByHour: nextHours,
+              updatedAt: nowTs,
+            }
+          : prev.popupAd,
+      };
+    });
+  };
+
+  const handleImportStoresBatch = (importedStores: StoreListingItem[]) => {
+    try {
+      const nowTs = Date.now();
+      const stampedBatch = importedStores.map((st, idx) => ({
+        ...st,
+        id:
+          st.id && String(st.id).trim().length > 0
+            ? String(st.id).trim()
+            : `st-imp-${nowTs}-${idx}`,
+        name: String(st.name || '').trim(),
+        category: String(st.category || '').trim() || 'مول دريم بلازا',
+        updatedAt: nowTs,
+      }));
+      updateAndPersist((prev) => ({
+        ...prev,
+        stores: [...stampedBatch, ...prev.stores],
+      }));
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'حدث خطأ أثناء استيراد المحلات';
+      setCloudWriteErrorToast(`فشل حفظ المحلات المستوردة: ${msg}`);
+    }
+  };
+
+  const handleDeleteStore = (id: string) => {
+    // التشديد على عدم حذف أي محل من أي قسم إلا في حالة Admin فقط
+    if (currentUser?.role !== 'admin') return;
+    if (isPermanentDreamPlazaStore(id)) return;
+    updateAndPersist((prev) => {
+      const targetStore = prev.stores.find((s) => s.id === id);
+      return {
+        ...prev,
+        stores: prev.stores.filter((s) => s.id !== id || isPermanentDreamPlazaStore(s.id)),
+        deletedRecordIds: Array.from(
+          new Set([...(prev.deletedRecordIds || []), id])
+        ),
+        settings: appendAdminActivityLogToSettings(
+          prev.settings,
+          'حذف محل',
+          targetStore?.name || id
+        ),
+      };
+    });
+  };
+
+  const handleToggleStoreLike = (storeId: string) => {
+    updateAndPersist((prev) => ({
+      ...prev,
+      stores: prev.stores.map((s) => {
+        if (s.id !== storeId) return s;
+        const alreadyLiked = s.likes.includes(visitorId);
+        return {
+          ...s,
+          updatedAt: Date.now(),
+          likes: alreadyLiked
+            ? s.likes.filter((id) => id !== visitorId)
+            : [...s.likes, visitorId],
+          dislikes: s.dislikes.filter((id) => id !== visitorId),
+        };
+      }),
+    }));
+  };
+
+  const handleToggleStoreDislike = (storeId: string) => {
+    updateAndPersist((prev) => ({
+      ...prev,
+      stores: prev.stores.map((s) => {
+        if (s.id !== storeId) return s;
+        const alreadyDisliked = s.dislikes.includes(visitorId);
+        return {
+          ...s,
+          updatedAt: Date.now(),
+          dislikes: alreadyDisliked
+            ? s.dislikes.filter((id) => id !== visitorId)
+            : [...s.dislikes, visitorId],
+          likes: s.likes.filter((id) => id !== visitorId),
+        };
+      }),
+    }));
+  };
+
+  const handleRateStore = (storeId: string, stars: number) => {
+    updateAndPersist((prev) => ({
+      ...prev,
+      stores: prev.stores.map((s) =>
+        s.id === storeId
+          ? {
+              ...s,
+              updatedAt: Date.now(),
+              ratings: { ...s.ratings, [visitorId]: stars },
+            }
+          : s
+      ),
+    }));
+  };
+
+  const handleAddStoreComment = (storeId: string, comment: StoreCommentItem) => {
+    updateAndPersist((prev) => ({
+      ...prev,
+      stores: prev.stores.map((s) =>
+        s.id === storeId
+          ? { ...s, updatedAt: Date.now(), comments: [comment, ...s.comments] }
+          : s
+      ),
+    }));
+  };
+
+  const handleDeleteStoreComment = (storeId: string, commentId: string) => {
+    if (currentUser?.role === 'moderator') return;
+    updateAndPersist((prev) => ({
+      ...prev,
+      stores: prev.stores.map((s) =>
+        s.id === storeId
+          ? {
+              ...s,
+              updatedAt: Date.now(),
+              comments: s.comments.filter((c) => c.id !== commentId),
+            }
+          : s
+      ),
+    }));
+  };
+
+  const handleToggleCommentLike = (storeId: string, commentId: string) => {
+    updateAndPersist((prev) => ({
+      ...prev,
+      stores: prev.stores.map((s) => {
+        if (s.id !== storeId) return s;
+        return {
+          ...s,
+          updatedAt: Date.now(),
+          comments: s.comments.map((c) => {
+            if (c.id !== commentId) return c;
+            const liked = c.likes.includes(visitorId);
+            return {
+              ...c,
+              likes: liked
+                ? c.likes.filter((id) => id !== visitorId)
+                : [...c.likes, visitorId],
+            };
+          }),
+        };
+      }),
+    }));
+  };
+
+  const handleAddCommentReply = (
+    storeId: string,
+    commentId: string,
+    reply: StoreReplyItem
+  ) => {
+    updateAndPersist((prev) => ({
+      ...prev,
+      stores: prev.stores.map((s) => {
+        if (s.id !== storeId) return s;
+        return {
+          ...s,
+          updatedAt: Date.now(),
+          comments: s.comments.map((c) =>
+            c.id === commentId ? { ...c, replies: [...c.replies, reply] } : c
+          ),
+        };
+      }),
+    }));
+  };
+
+  // --- Stage 3: Service Numbers & Tawsila Handlers ---
+  const handleAddServiceNumber = (entry: ServicePhoneEntry) => {
+    const stampedEntry: ServicePhoneEntry = {
+      ...entry,
+      updatedAt: Date.now(),
+    };
+    updateAndPersist((prev) => ({
+      ...prev,
+      serviceNumbers: [stampedEntry, ...prev.serviceNumbers],
+      deletedRecordIds: (prev.deletedRecordIds || []).filter(
+        (id) => id !== stampedEntry.id
+      ),
+    }));
+  };
+
+  const handleImportServiceNumbersBatch = (
+    entries: ServicePhoneEntry[],
+    discoveredProfessions?: string[]
+  ) => {
+    const nowTs = Date.now();
+    const stampedEntries = entries.map((entry, idx) => ({
+      ...entry,
+      id:
+        entry.id && String(entry.id).trim().length > 0
+          ? String(entry.id).trim()
+          : `srvnum-imp-${nowTs}-${idx}`,
+      category: (entry.profession || entry.category || 'خدمات عامة').trim(),
+      updatedAt: nowTs,
+    }));
+    const importedIdsSet = new Set(stampedEntries.map((e) => e.id));
+
+    updateAndPersist((prev) => {
+      const mergedProfs = Array.from(
+        new Set([
+          ...(prev.settings.serviceProfessions || []),
+          ...(discoveredProfessions || []),
+          ...stampedEntries
+            .map((e) => (e.profession || e.category || '').trim())
+            .filter(Boolean),
+        ])
+      );
+      return {
+        ...prev,
+        serviceNumbers: [...stampedEntries, ...prev.serviceNumbers],
+        deletedRecordIds: (prev.deletedRecordIds || []).filter(
+          (id) => !importedIdsSet.has(id)
+        ),
+        settings: {
+          ...prev.settings,
+          serviceProfessions: mergedProfs,
+          updatedAt: nowTs,
+        },
+      };
+    });
+  };
+
+  const handleUpdateServiceNumber = (updated: ServicePhoneEntry) => {
+    const stampedEntry: ServicePhoneEntry = {
+      ...updated,
+      updatedAt: Date.now(),
+    };
+    updateAndPersist((prev) => ({
+      ...prev,
+      serviceNumbers: prev.serviceNumbers.map((n) =>
+        n.id === stampedEntry.id ? stampedEntry : n
+      ),
+      settings: appendAdminActivityLogToSettings(
+        prev.settings,
+        'تعديل خدمة',
+        stampedEntry.title
+      ),
+    }));
+  };
+
+  const handleDeleteServiceNumber = (id: string) => {
+    if (currentUser?.role === 'moderator') return;
+    updateAndPersist((prev) => {
+      const targetSrv = prev.serviceNumbers.find((n) => n.id === id);
+      return {
+        ...prev,
+        serviceNumbers: prev.serviceNumbers.filter((n) => n.id !== id),
+        deletedRecordIds: Array.from(
+          new Set([...(prev.deletedRecordIds || []), id])
+        ),
+        settings: appendAdminActivityLogToSettings(
+          prev.settings,
+          'حذف خدمة',
+          targetSrv?.title || id
+        ),
+      };
+    });
+  };
+
+  const handleAddTawsila = (ride: TawsilaRideItem) => {
+    updateAndPersist((prev) => ({
+      ...prev,
+      tawsilaRides: [ride, ...prev.tawsilaRides],
+    }));
+  };
+
+  const handleUpdateTawsila = (updatedRide: TawsilaRideItem) => {
+    updateAndPersist((prev) => ({
+      ...prev,
+      tawsilaRides: prev.tawsilaRides.map((r) =>
+        r.id === updatedRide.id ? updatedRide : r
+      ),
+    }));
+  };
+
+  const handleDeleteTawsila = (id: string) => {
+    if (currentUser?.role === 'moderator') return;
+    updateAndPersist((prev) => ({
+      ...prev,
+      tawsilaRides: prev.tawsilaRides.filter((r) => r.id !== id),
+      deletedRecordIds: Array.from(
+        new Set([...(prev.deletedRecordIds || []), id])
+      ),
+    }));
+  };
+
+  // --- Stage 4: Community Posts, Moderation, Reports, Comments & Reactions ---
+  const handleAddCommunityPost = (post: CommunityPostItem) => {
+    updateAndPersist((prev) => ({
+      ...prev,
+      communityPosts: [post, ...prev.communityPosts],
+    }));
+  };
+
+  const handleUpdatePostStatus = (postId: string, status: CommunityPostStatus) => {
+    updateAndPersist((prev) => ({
+      ...prev,
+      communityPosts: prev.communityPosts.map((p) =>
+        p.id === postId ? { ...p, status } : p
+      ),
+    }));
+  };
+
+  const handleEditCommunityPost = (
+    postId: string,
+    updatedContent: string,
+    updatedPostType?: CommunityPostType
+  ) => {
+    updateAndPersist((prev) => ({
+      ...prev,
+      communityPosts: prev.communityPosts.map((p) =>
+        p.id === postId
+          ? {
+              ...p,
+              content: updatedContent,
+              postType: updatedPostType || p.postType,
+            }
+          : p
+      ),
+    }));
+  };
+
+  const handleDeletePost = (postId: string) => {
+    updateAndPersist((prev) => {
+      const target = prev.communityPosts.find((p) => p.id === postId);
+      if (!target) return prev;
+      const isOwner =
+        target.authorId === visitorId ||
+        Boolean(
+          currentUser &&
+            (target.authorId === currentUser.id ||
+              target.authorUsername.trim().toLowerCase() ===
+                currentUser.username.trim().toLowerCase())
+        );
+      if (
+        currentUser?.role !== 'admin' &&
+        currentUser?.role !== 'moderator' &&
+        !isOwner
+      ) {
+        return prev;
+      }
+      return {
+        ...prev,
+        communityPosts: prev.communityPosts.filter((p) => p.id !== postId),
+        deletedRecordIds: Array.from(
+          new Set([...(prev.deletedRecordIds || []), postId])
+        ),
+        settings: appendAdminActivityLogToSettings(
+          prev.settings,
+          'حذف منشور (مجتمع)',
+          target.authorUsername
+        ),
+      };
+    });
+  };
+
+  const handleTogglePinCommunityPost = (postId: string) => {
+    if (currentUser?.role !== 'admin') return;
+    updateAndPersist((prev) => ({
+      ...prev,
+      communityPosts: prev.communityPosts.map((p) =>
+        p.id === postId ? { ...p, isPinned: !p.isPinned } : p
+      ),
+    }));
+  };
+
+  const handleBulkDeleteCommunityPosts = (postIds: string[]) => {
+    const idSet = new Set(postIds);
+    if (idSet.size === 0) return;
+    updateAndPersist((prev) => ({
+      ...prev,
+      communityPosts: prev.communityPosts.filter((p) => !idSet.has(p.id)),
+      deletedRecordIds: Array.from(
+        new Set([...(prev.deletedRecordIds || []), ...postIds])
+      ),
+    }));
+  };
+
+  const handleUpdatePostPrivacy = (
+    section: 'community' | 'buy_sell' | 'utilities',
+    postId: string,
+    privacy: PostPrivacyLevel,
+    allowedUsernames?: string[],
+    customListId?: string
+  ) => {
+    updateAndPersist((prev) => {
+      const updateList = (list: CommunityPostItem[]) =>
+        list.map((p) =>
+          p.id === postId
+            ? {
+                ...p,
+                privacy,
+                allowedUsernames:
+                  privacy === 'custom_list' ? allowedUsernames || [] : undefined,
+                customListId:
+                  privacy === 'custom_list' ? customListId : undefined,
+              }
+            : p
+        );
+      if (section === 'buy_sell') {
+        return {
+          ...prev,
+          buySellPosts: updateList(prev.buySellPosts || []),
+        };
+      }
+      if (section === 'utilities') {
+        return {
+          ...prev,
+          utilityPosts: updateList(prev.utilityPosts || []),
+        };
+      }
+      return {
+        ...prev,
+        communityPosts: updateList(prev.communityPosts || []),
+      };
+    });
+  };
+
+  const handleUpdateMultiplePostsPrivacy = (
+    postIds: string[],
+    privacy: PostPrivacyLevel
+  ) => {
+    const idSet = new Set(postIds);
+    if (idSet.size === 0) return;
+    const nowTs = Date.now();
+    updateAndPersist((prev) => ({
+      ...prev,
+      communityPosts: (prev.communityPosts || []).map((p) =>
+        idSet.has(p.id) ? { ...p, privacy, updatedAt: nowTs } : p
+      ),
+    }));
+  };
+
+  const handleSharePostToBuySell = (sourcePost: CommunityPostItem) => {
+    const nowTs = Date.now();
+    const sharedPost: CommunityPostItem = {
+      ...sourcePost,
+      id: `bs-share-${nowTs}-${Math.random().toString(36).slice(2, 6)}`,
+      authorId: currentUser?.id || visitorId,
+      authorUsername: currentUser?.username || sourcePost.authorUsername,
+      postType: 'بائع',
+      postSource: 'buy_sell',
+      privacy: 'public',
+      status: currentUser?.role === 'admin' ? 'approved' : 'pending',
+      likes: [],
+      dislikes: [],
+      reports: [],
+      comments: [],
+      isPinned: false,
+      isSold: false,
+      createdAt: new Date(nowTs).toLocaleString('ar-EG'),
+      updatedAt: nowTs,
+    };
+    updateAndPersist((prev) => ({
+      ...prev,
+      buySellPosts: [sharedPost, ...(prev.buySellPosts || [])],
+    }));
+  };
+
+  // --- Friend Requests, Unfriend & Follow Handlers ---
+  const handleSendFriendRequest = (targetUsername: string) => {
+    if (!currentUser) {
+      setIsAuthModalOpen(true);
+      return;
+    }
+    const cleanTarget = targetUsername.trim();
+    if (
+      !cleanTarget ||
+      cleanTarget.toLowerCase() === currentUser.username.trim().toLowerCase()
+    ) {
+      return;
+    }
+    const nowTs = Date.now();
+    updateAndPersist((prev) => {
+      const targetUser = prev.users.find(
+        (u) => u.username.trim().toLowerCase() === cleanTarget.toLowerCase()
+      );
+      if (targetUser?.profile?.disableFriendRequests) {
+        return prev;
+      }
+      const existingReqs = prev.settings.friendRequests || [];
+      const alreadyPending = existingReqs.some(
+        (r) =>
+          r.status === 'pending' &&
+          r.fromUsername.trim().toLowerCase() ===
+            currentUser.username.trim().toLowerCase() &&
+          r.toUsername.trim().toLowerCase() === cleanTarget.toLowerCase()
+      );
+      if (alreadyPending) return prev;
+
+      const newReq = {
+        id: `freq-${nowTs}-${Math.random().toString(36).slice(2, 6)}`,
+        fromUserId: currentUser.id,
+        fromUsername: currentUser.username,
+        toUsername: targetUser?.username || cleanTarget,
+        status: 'pending' as const,
+        createdAt: new Date(nowTs).toISOString(),
+        updatedAt: nowTs,
+      };
+      return {
+        ...prev,
+        settings: {
+          ...prev.settings,
+          friendRequests: [newReq, ...existingReqs],
+          updatedAt: nowTs,
+        },
+      };
+    });
+  };
+
+  const handleCancelFriendRequest = (targetUsername: string) => {
+    if (!currentUser) return;
+    const cleanTarget = targetUsername.trim().toLowerCase();
+    const myNorm = currentUser.username.trim().toLowerCase();
+    const nowTs = Date.now();
+    updateAndPersist((prev) => ({
+      ...prev,
+      settings: {
+        ...prev.settings,
+        friendRequests: (prev.settings.friendRequests || []).filter(
+          (r) =>
+            !(
+              r.status === 'pending' &&
+              r.fromUsername.trim().toLowerCase() === myNorm &&
+              r.toUsername.trim().toLowerCase() === cleanTarget
+            )
+        ),
+        updatedAt: nowTs,
+      },
+    }));
+  };
+
+  const handleRespondFriendRequest = (
+    requestId: string,
+    decision: 'accepted' | 'rejected'
+  ) => {
+    const nowTs = Date.now();
+    let updatedCurrentUserSnapshot: UserAccount | null = null;
+
+    updateAndPersist((prev) => {
+      const req = (prev.settings.friendRequests || []).find(
+        (r) => r.id === requestId
+      );
+      if (!req) return prev;
+
+      const fromNorm = req.fromUsername.trim().toLowerCase();
+      const toNorm = req.toUsername.trim().toLowerCase();
+
+      const nextUsers =
+        decision === 'accepted'
+          ? prev.users.map((u) => {
+              const uNorm = u.username.trim().toLowerCase();
+              if (uNorm === fromNorm) {
+                const nextFriends = Array.from(
+                  new Set([
+                    ...(u.profile?.friendUsernames || []),
+                    req.toUsername,
+                  ])
+                );
+                const nextFollowing = Array.from(
+                  new Set([
+                    ...(u.profile?.followingUsernames || []),
+                    req.toUsername,
+                  ])
+                );
+                const updated: UserAccount = {
+                  ...u,
+                  profile: {
+                    ...(u.profile || {}),
+                    friendUsernames: nextFriends,
+                    followingUsernames: nextFollowing,
+                  },
+                  updatedAt: nowTs,
+                };
+                if (currentUser && u.id === currentUser.id) {
+                  updatedCurrentUserSnapshot = updated;
+                }
+                return updated;
+              }
+              if (uNorm === toNorm) {
+                const nextFriends = Array.from(
+                  new Set([
+                    ...(u.profile?.friendUsernames || []),
+                    req.fromUsername,
+                  ])
+                );
+                const nextFollowing = Array.from(
+                  new Set([
+                    ...(u.profile?.followingUsernames || []),
+                    req.fromUsername,
+                  ])
+                );
+                const updated: UserAccount = {
+                  ...u,
+                  profile: {
+                    ...(u.profile || {}),
+                    friendUsernames: nextFriends,
+                    followingUsernames: nextFollowing,
+                  },
+                  updatedAt: nowTs,
+                };
+                if (currentUser && u.id === currentUser.id) {
+                  updatedCurrentUserSnapshot = updated;
+                }
+                return updated;
+              }
+              return u;
+            })
+          : prev.users;
+
+      return {
+        ...prev,
+        users: nextUsers,
+        settings: {
+          ...prev.settings,
+          friendRequests: (prev.settings.friendRequests || []).map((r) =>
+            r.id === requestId
+              ? { ...r, status: decision, updatedAt: nowTs }
+              : r
+          ),
+          updatedAt: nowTs,
+        },
+      };
+    });
+
+    if (updatedCurrentUserSnapshot) {
+      setCurrentUser(updatedCurrentUserSnapshot);
+    }
+  };
+
+  const handleUnfriendUser = (targetUsername: string) => {
+    if (!currentUser) return;
+    const myNorm = currentUser.username.trim().toLowerCase();
+    const targetNorm = targetUsername.trim().toLowerCase();
+    const nowTs = Date.now();
+    let updatedCurrentUserSnapshot: UserAccount | null = null;
+
+    updateAndPersist((prev) => {
+      const nextUsers = prev.users.map((u) => {
+        const uNorm = u.username.trim().toLowerCase();
+        if (uNorm === myNorm) {
+          const updated: UserAccount = {
+            ...u,
+            profile: {
+              ...(u.profile || {}),
+              friendUsernames: (u.profile?.friendUsernames || []).filter(
+                (f) => f.trim().toLowerCase() !== targetNorm
+              ),
+              followingUsernames: (u.profile?.followingUsernames || []).filter(
+                (f) => f.trim().toLowerCase() !== targetNorm
+              ),
+            },
+            updatedAt: nowTs,
+          };
+          updatedCurrentUserSnapshot = updated;
+          return updated;
+        }
+        if (uNorm === targetNorm) {
+          return {
+            ...u,
+            profile: {
+              ...(u.profile || {}),
+              friendUsernames: (u.profile?.friendUsernames || []).filter(
+                (f) => f.trim().toLowerCase() !== myNorm
+              ),
+              followingUsernames: (u.profile?.followingUsernames || []).filter(
+                (f) => f.trim().toLowerCase() !== myNorm
+              ),
+            },
+            updatedAt: nowTs,
+          };
+        }
+        return u;
+      });
+      return {
+        ...prev,
+        users: nextUsers,
+        settings: {
+          ...prev.settings,
+          friendRequests: (prev.settings.friendRequests || []).filter(
+            (r) =>
+              !(
+                (r.fromUsername.trim().toLowerCase() === myNorm &&
+                  r.toUsername.trim().toLowerCase() === targetNorm) ||
+                (r.fromUsername.trim().toLowerCase() === targetNorm &&
+                  r.toUsername.trim().toLowerCase() === myNorm)
+              )
+          ),
+          updatedAt: nowTs,
+        },
+      };
+    });
+
+    if (updatedCurrentUserSnapshot) {
+      setCurrentUser(updatedCurrentUserSnapshot);
+    }
+  };
+
+  const handleToggleFollowUser = (targetUsername: string) => {
+    if (!currentUser) {
+      setIsAuthModalOpen(true);
+      return;
+    }
+    const myUsername = currentUser.username.trim();
+    const myNorm = myUsername.toLowerCase();
+    const targetNorm = targetUsername.trim().toLowerCase();
+    if (!targetNorm || myNorm === targetNorm) return;
+    const nowTs = Date.now();
+
+    updateAndPersist((prev) => ({
+      ...prev,
+      users: prev.users.map((u) => {
+        if (u.username.trim().toLowerCase() !== targetNorm) return u;
+        const currentFollowers = u.profile?.followersUsernames || [];
+        const isAlreadyFollowing = currentFollowers.some(
+          (f) => f.trim().toLowerCase() === myNorm
+        );
+        const nextFollowers = isAlreadyFollowing
+          ? currentFollowers.filter((f) => f.trim().toLowerCase() !== myNorm)
+          : [...currentFollowers, myUsername];
+        return {
+          ...u,
+          profile: {
+            ...(u.profile || {}),
+            followersUsernames: nextFollowers,
+          },
+          updatedAt: nowTs,
+        };
+      }),
+    }));
+  };
+
+  const handleTriggerMentionNotifications = (
+    section: MainSectionId,
+    mentionedUsernames: string[],
+    postId: string,
+    snippet: string,
+    commentId?: string
+  ) => {
+    if (!mentionedUsernames || mentionedUsernames.length === 0) return;
+    const senderUsername = currentUser?.username || 'مستخدم';
+    const nowTs = Date.now();
+    const newNotifications: MentionNotificationItem[] = mentionedUsernames
+      .map((u) => u.trim())
+      .filter(
+        (u) =>
+          u.length > 0 &&
+          u.toLowerCase() !== senderUsername.trim().toLowerCase()
+      )
+      .map((targetUname, idx) => ({
+        id: `mention-${nowTs}-${idx}-${Math.random().toString(36).slice(2, 6)}`,
+        targetUsername: targetUname,
+        actorUsername: senderUsername,
+        actorUserId: currentUser?.id,
+        section,
+        postId,
+        commentId,
+        snippet: snippet.slice(0, 140),
+        createdAt: new Date(nowTs).toLocaleString('ar-EG'),
+        isRead: false,
+      }));
+    if (newNotifications.length === 0) return;
+
+    updateAndPersist((prev) => ({
+      ...prev,
+      settings: {
+        ...prev.settings,
+        mentionNotifications: [
+          ...newNotifications,
+          ...(prev.settings.mentionNotifications || []),
+        ].slice(0, 300),
+        updatedAt: nowTs,
+      },
+    }));
+  };
+
+  const handleNavigateToMention = (notif: MentionNotificationItem) => {
+    updateAndPersist((prev) => ({
+      ...prev,
+      settings: {
+        ...prev.settings,
+        mentionNotifications: (prev.settings.mentionNotifications || []).map(
+          (n) => (n.id === notif.id ? { ...n, isRead: true } : n)
+        ),
+        updatedAt: Date.now(),
+      },
+    }));
+    if (notif.section === 'profile') {
+      setViewedProfileUsername(notif.actorUsername);
+    }
+    setActiveSection(notif.section);
+    setExternalJumpTarget({
+      postId: notif.postId,
+      commentId: notif.commentId,
+      tick: Date.now(),
+    });
+  };
+
+  const handleSelectUserProfile = (username: string) => {
+    setViewedProfileUsername(username);
+    setActiveSection('profile');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleToggleCommunityPostSold = (postId: string) => {
+    updateAndPersist((prev) => ({
+      ...prev,
+      communityPosts: prev.communityPosts.map((p) => {
+        if (p.id !== postId) return p;
+        const isOwner =
+          p.authorId === visitorId ||
+          Boolean(
+            currentUser &&
+              (p.authorId === currentUser.id ||
+                p.authorUsername.trim().toLowerCase() ===
+                  currentUser.username.trim().toLowerCase())
+          );
+        if (currentUser?.role !== 'admin' && !isOwner) return p;
+        return { ...p, isSold: !p.isSold };
+      }),
+    }));
+  };
+
+  const handleToggleCommunityPostCommentsDisabled = (postId: string) => {
+    updateAndPersist((prev) => ({
+      ...prev,
+      communityPosts: prev.communityPosts.map((p) => {
+        if (p.id !== postId) return p;
+        const isOwner =
+          p.authorId === visitorId ||
+          Boolean(
+            currentUser &&
+              (p.authorId === currentUser.id ||
+                p.authorUsername.trim().toLowerCase() ===
+                  currentUser.username.trim().toLowerCase())
+          );
+        if (currentUser?.role !== 'admin' && !isOwner) return p;
+        return { ...p, commentsDisabled: !p.commentsDisabled };
+      }),
+    }));
+  };
+
+  const handleTogglePostLike = (postId: string) => {
+    const nowTs = Date.now();
+    updateAndPersist((prev) => ({
+      ...prev,
+      communityPosts: prev.communityPosts.map((p) => {
+        if (p.id !== postId) return p;
+        const alreadyLiked = p.likes.includes(visitorId);
+        return {
+          ...p,
+          updatedAt: nowTs,
+          likes: alreadyLiked
+            ? p.likes.filter((id) => id !== visitorId)
+            : [...p.likes, visitorId],
+          dislikes: p.dislikes.filter((id) => id !== visitorId),
+        };
+      }),
+    }));
+  };
+
+  const handleTogglePostDislike = (postId: string) => {
+    const nowTs = Date.now();
+    updateAndPersist((prev) => ({
+      ...prev,
+      communityPosts: prev.communityPosts.map((p) => {
+        if (p.id !== postId) return p;
+        const alreadyDisliked = p.dislikes.includes(visitorId);
+        return {
+          ...p,
+          updatedAt: nowTs,
+          dislikes: alreadyDisliked
+            ? p.dislikes.filter((id) => id !== visitorId)
+            : [...p.dislikes, visitorId],
+          likes: p.likes.filter((id) => id !== visitorId),
+        };
+      }),
+    }));
+  };
+
+  const handleReportPost = (postId: string, reason: CommunityReportReason) => {
+    const reporterName = currentUser?.username || 'زائر';
+    updateAndPersist((prev) => ({
+      ...prev,
+      communityPosts: prev.communityPosts.map((p) =>
+        p.id === postId
+          ? {
+              ...p,
+              reports: [
+                ...p.reports,
+                {
+                  id: `rep-p-${Date.now()}`,
+                  reporterId: visitorId,
+                  reporterUsername: reporterName,
+                  reason,
+                  createdAt: new Date().toISOString(),
+                },
+              ],
+            }
+          : p
+      ),
+    }));
+  };
+
+  const handleRestoreReportedPost = (postId: string) => {
+    updateAndPersist((prev) => ({
+      ...prev,
+      communityPosts: prev.communityPosts.map((p) =>
+        p.id === postId ? { ...p, reports: [] } : p
+      ),
+    }));
+  };
+
+  const handleAddCommentToPost = (postId: string, comment: CommunityCommentItem) => {
+    const nowTs = Date.now();
+    updateAndPersist((prev) => ({
+      ...prev,
+      communityPosts: prev.communityPosts.map((p) =>
+        p.id === postId
+          ? {
+              ...p,
+              updatedAt: nowTs,
+              comments: [...p.comments, { ...comment, isHidden: false, updatedAt: nowTs }],
+            }
+          : p
+      ),
+    }));
+  };
+
+  const handleToggleCommunityCommentLike = (postId: string, commentId: string) => {
+    const nowTs = Date.now();
+    updateAndPersist((prev) => ({
+      ...prev,
+      communityPosts: prev.communityPosts.map((p) => {
+        if (p.id !== postId) return p;
+        return {
+          ...p,
+          updatedAt: nowTs,
+          comments: p.comments.map((c) => {
+            if (c.id !== commentId) return c;
+            const liked = c.likes.includes(visitorId);
+            return {
+              ...c,
+              updatedAt: nowTs,
+              likes: liked
+                ? c.likes.filter((id) => id !== visitorId)
+                : [...c.likes, visitorId],
+            };
+          }),
+        };
+      }),
+    }));
+  };
+
+  const handleToggleCommunityCommentEmoji = (
+    postId: string,
+    commentId: string,
+    reaction: CommentEmojiReactionType
+  ) => {
+    const nowTs = Date.now();
+    updateAndPersist((prev) => ({
+      ...prev,
+      communityPosts: prev.communityPosts.map((p) => {
+        if (p.id !== postId) return p;
+        return {
+          ...p,
+          updatedAt: nowTs,
+          comments: p.comments.map((c) => {
+            if (c.id !== commentId) return c;
+            const currentArr = c.reactions[reaction] || [];
+            const hasReacted = currentArr.includes(visitorId);
+            return {
+              ...c,
+              updatedAt: nowTs,
+              reactions: {
+                ...c.reactions,
+                [reaction]: hasReacted
+                  ? currentArr.filter((id) => id !== visitorId)
+                  : [...currentArr, visitorId],
+              },
+            };
+          }),
+        };
+      }),
+    }));
+  };
+
+  const handleAddReplyToCommunityComment = (
+    postId: string,
+    commentId: string,
+    reply: CommunityCommentReply
+  ) => {
+    const nowTs = Date.now();
+    updateAndPersist((prev) => ({
+      ...prev,
+      communityPosts: prev.communityPosts.map((p) => {
+        if (p.id !== postId) return p;
+        return {
+          ...p,
+          updatedAt: nowTs,
+          comments: p.comments.map((c) =>
+            c.id === commentId
+              ? { ...c, updatedAt: nowTs, replies: [...c.replies, reply] }
+              : c
+          ),
+        };
+      }),
+    }));
+  };
+
+  const handleReportCommunityComment = (
+    postId: string,
+    commentId: string,
+    reason: CommunityReportReason
+  ) => {
+    const reporterName = currentUser?.username || 'زائر';
+    const nowTs = Date.now();
+    updateAndPersist((prev) => ({
+      ...prev,
+      communityPosts: prev.communityPosts.map((p) => {
+        if (p.id !== postId) return p;
+        return {
+          ...p,
+          updatedAt: nowTs,
+          comments: p.comments.map((c) =>
+            c.id === commentId
+              ? {
+                  ...c,
+                  updatedAt: nowTs,
+                  reports: [
+                    ...c.reports,
+                    {
+                      id: `rep-c-${nowTs}`,
+                      reporterId: visitorId,
+                      reporterUsername: reporterName,
+                      reason,
+                      createdAt: new Date().toISOString(),
+                    },
+                  ],
+                }
+              : c
+          ),
+        };
+      }),
+    }));
+  };
+
+  const handleDeleteCommunityComment = (postId: string, commentId: string) => {
+    const nowTs = Date.now();
+    updateAndPersist((prev) => {
+      const targetPost = prev.communityPosts.find((p) => p.id === postId);
+      if (!targetPost) return prev;
+      const isPostOwner =
+        targetPost.authorId === visitorId ||
+        Boolean(
+          currentUser &&
+            (targetPost.authorId === currentUser.id ||
+              targetPost.authorUsername.trim().toLowerCase() ===
+                currentUser.username.trim().toLowerCase())
+        );
+      if (currentUser?.role !== 'admin' && !isPostOwner) return prev;
+      return {
+        ...prev,
+        deletedRecordIds: Array.from(
+          new Set([...(prev.deletedRecordIds || []), commentId])
+        ),
+        communityPosts: prev.communityPosts.map((p) =>
+          p.id === postId
+            ? {
+                ...p,
+                updatedAt: nowTs,
+                comments: p.comments.filter((c) => c.id !== commentId),
+              }
+            : p
+        ),
+      };
+    });
+  };
+
+  const handleEditCommunityComment = (
+    postId: string,
+    commentId: string,
+    newText: string
+  ) => {
+    const clean = newText.trim();
+    if (!clean) return;
+    const nowTs = Date.now();
+    updateAndPersist((prev) => {
+      const targetPost = prev.communityPosts.find((p) => p.id === postId);
+      if (!targetPost) return prev;
+      const isPostOwner =
+        targetPost.authorId === visitorId ||
+        Boolean(
+          currentUser &&
+            (targetPost.authorId === currentUser.id ||
+              targetPost.authorUsername.trim().toLowerCase() ===
+                currentUser.username.trim().toLowerCase())
+        );
+      if (currentUser?.role !== 'admin' && !isPostOwner) return prev;
+      return {
+        ...prev,
+        communityPosts: prev.communityPosts.map((p) =>
+          p.id === postId
+            ? {
+                ...p,
+                updatedAt: nowTs,
+                comments: p.comments.map((c) =>
+                  c.id === commentId ? { ...c, text: clean, updatedAt: nowTs } : c
+                ),
+              }
+            : p
+        ),
+      };
+    });
+  };
+
+  const handleEditCommunityReply = (
+    postId: string,
+    commentId: string,
+    replyId: string,
+    newText: string
+  ) => {
+    const clean = newText.trim();
+    if (!clean) return;
+    const nowTs = Date.now();
+    updateAndPersist((prev) => {
+      const targetPost = prev.communityPosts.find((p) => p.id === postId);
+      if (!targetPost) return prev;
+      const isPostOwner =
+        targetPost.authorId === visitorId ||
+        Boolean(
+          currentUser &&
+            (targetPost.authorId === currentUser.id ||
+              targetPost.authorUsername.trim().toLowerCase() ===
+                currentUser.username.trim().toLowerCase())
+        );
+      if (currentUser?.role !== 'admin' && !isPostOwner) return prev;
+      return {
+        ...prev,
+        communityPosts: prev.communityPosts.map((p) =>
+          p.id === postId
+            ? {
+                ...p,
+                updatedAt: nowTs,
+                comments: p.comments.map((c) =>
+                  c.id === commentId
+                    ? {
+                        ...c,
+                        updatedAt: nowTs,
+                        replies: (c.replies || []).map((r) =>
+                          r.id === replyId
+                            ? { ...r, text: clean, updatedAt: nowTs }
+                            : r
+                        ),
+                      }
+                    : c
+                ),
+              }
+            : p
+        ),
+      };
+    });
+  };
+
+  const handleDeleteCommunityReply = (
+    postId: string,
+    commentId: string,
+    replyId: string
+  ) => {
+    const nowTs = Date.now();
+    updateAndPersist((prev) => {
+      const targetPost = prev.communityPosts.find((p) => p.id === postId);
+      if (!targetPost) return prev;
+      const isPostOwner =
+        targetPost.authorId === visitorId ||
+        Boolean(
+          currentUser &&
+            (targetPost.authorId === currentUser.id ||
+              targetPost.authorUsername.trim().toLowerCase() ===
+                currentUser.username.trim().toLowerCase())
+        );
+      if (currentUser?.role !== 'admin' && !isPostOwner) return prev;
+      return {
+        ...prev,
+        deletedRecordIds: Array.from(
+          new Set([...(prev.deletedRecordIds || []), replyId])
+        ),
+        communityPosts: prev.communityPosts.map((p) =>
+          p.id === postId
+            ? {
+                ...p,
+                updatedAt: nowTs,
+                comments: p.comments.map((c) =>
+                  c.id === commentId
+                    ? {
+                        ...c,
+                        updatedAt: nowTs,
+                        replies: (c.replies || []).filter((r) => r.id !== replyId),
+                      }
+                    : c
+                ),
+              }
+            : p
+        ),
+      };
+    });
+  };
+
+  const handleRestoreReportedCommunityComment = (
+    postId: string,
+    commentId: string
+  ) => {
+    const nowTs = Date.now();
+    updateAndPersist((prev) => ({
+      ...prev,
+      communityPosts: prev.communityPosts.map((p) => {
+        if (p.id !== postId) return p;
+        return {
+          ...p,
+          updatedAt: nowTs,
+          comments: p.comments.map((c) =>
+            c.id === commentId ? { ...c, updatedAt: nowTs, reports: [] } : c
+          ),
+        };
+      }),
+    }));
+  };
+
+  const handleTogglePinCommunityComment = (
+    postId: string,
+    commentId: string
+  ) => {
+    const nowTs = Date.now();
+    updateAndPersist((prev) => ({
+      ...prev,
+      communityPosts: prev.communityPosts.map((p) => {
+        if (p.id !== postId) return p;
+        const isOwner =
+          p.authorId === visitorId ||
+          Boolean(
+            currentUser &&
+              (p.authorId === currentUser.id ||
+                p.authorUsername.trim().toLowerCase() ===
+                  currentUser.username.trim().toLowerCase())
+          );
+        if (currentUser?.role !== 'admin' && !isOwner) return p;
+        return {
+          ...p,
+          updatedAt: nowTs,
+          comments: p.comments.map((c) =>
+            c.id === commentId
+              ? { ...c, updatedAt: nowTs, isPinned: !c.isPinned }
+              : c
+          ),
+        };
+      }),
+    }));
+  };
+
+  const handleToggleHideCommunityComment = (
+    postId: string,
+    commentId: string
+  ) => {
+    const nowTs = Date.now();
+    updateAndPersist((prev) => ({
+      ...prev,
+      communityPosts: prev.communityPosts.map((p) => {
+        if (p.id !== postId) return p;
+        return {
+          ...p,
+          updatedAt: nowTs,
+          comments: p.comments.map((c) =>
+            c.id === commentId
+              ? { ...c, updatedAt: nowTs, isHidden: !c.isHidden }
+              : c
+          ),
+        };
+      }),
+    }));
+  };
+
+  // --- Live Community Chat Handlers ("محادثة لايف") ---
+  const handleSendChatMessage = (
+    text: string,
+    textColor: string,
+    isSystemNotification?: boolean,
+    targetUsername?: string
+  ) => {
+    const newMsg: LiveChatMessageItem = {
+      id: `chat-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      authorId: visitorId,
+      authorUsername: currentUser?.username || 'زائر',
+      text,
+      textColor: textColor || '#F8FAFC',
+      reports: [],
+      createdAt: new Date().toISOString(),
+      ...(isSystemNotification ? { isSystemNotification: true } : {}),
+      ...(targetUsername ? { targetUsername } : {}),
+    };
+    updateAndPersistChatFast((prev) => {
+      const nextTyping = { ...(prev.chatTypingMap || {}) };
+      const myNorm = (currentUser?.username || 'زائر').trim().toLowerCase();
+      delete nextTyping[visitorId];
+      delete nextTyping[myNorm];
+      return {
+        ...prev,
+        liveChatMessages: [...(prev.liveChatMessages || []).slice(-49), newMsg],
+        chatTypingMap: nextTyping,
+      };
+    });
+  };
+
+  const handleReportChatMessage = (
+    msgId: string,
+    reason: CommunityReportReason
+  ) => {
+    const reporterName = currentUser?.username || 'زائر';
+    updateAndPersist((prev) => {
+      const targetMsg = (prev.liveChatMessages || []).find((m) => m.id === msgId);
+      const reportAlert: AdminMessage | null = targetMsg
+        ? {
+            id: `msg-chat-rep-${Date.now()}`,
+            senderId: visitorId,
+            senderUsername: `بلاغ محادثة لايف (${reporterName})`,
+            content: `بلاغ (${reason}) ضد رسالة "${targetMsg.authorUsername}": "${targetMsg.text}"`,
+            isRead: false,
+            createdAt: new Date().toISOString(),
+          }
+        : null;
+
+      const privateRep: PrivateChatReportItem | null = targetMsg
+        ? {
+            id: `pcrep-pub-${Date.now()}`,
+            reporterId: visitorId,
+            reporterUsername: reporterName,
+            reportedUserId: targetMsg.authorId,
+            reportedUsername: targetMsg.authorUsername,
+            reason,
+            sampleMessage: targetMsg.text,
+            createdAt: new Date().toISOString(),
+          }
+        : null;
+
+      return {
+        ...prev,
+        liveChatMessages: (prev.liveChatMessages || []).map((m) =>
+          m.id === msgId
+            ? {
+                ...m,
+                reports: [
+                  ...(m.reports || []),
+                  {
+                    id: `rep-chat-${Date.now()}`,
+                    reporterId: visitorId,
+                    reporterUsername: reporterName,
+                    reason,
+                    createdAt: new Date().toISOString(),
+                  },
+                ],
+              }
+            : m
+        ),
+        privateChatReports: privateRep
+          ? [privateRep, ...(prev.privateChatReports || [])]
+          : prev.privateChatReports || [],
+        messages: reportAlert ? [reportAlert, ...prev.messages] : prev.messages,
+      };
+    });
+  };
+
+  const handleDeleteChatMessage = (msgId: string, notifyUsername?: string) => {
+    updateAndPersistChatFast((prev) => {
+      const filtered = (prev.liveChatMessages || []).filter(
+        (m) => m.id !== msgId
+      );
+      const nextDeletedIds = Array.from(
+        new Set([...(prev.deletedRecordIds || []), msgId])
+      );
+      if (notifyUsername) {
+        const sysMsg: LiveChatMessageItem = {
+          id: `chat-sys-${Date.now()}`,
+          authorId: 'system-admin',
+          authorUsername: 'النظام',
+          text: `تم حذف رسالة المستخدم "${notifyUsername}" بواسطة الإدارة`,
+          textColor: '#F87171',
+          reports: [],
+          createdAt: new Date().toISOString(),
+          isSystemNotification: true,
+          targetUsername: notifyUsername,
+        };
+        return {
+          ...prev,
+          liveChatMessages: [...filtered.slice(-49), sysMsg],
+          deletedRecordIds: nextDeletedIds,
+        };
+      }
+      return {
+        ...prev,
+        liveChatMessages: filtered.slice(-50),
+        deletedRecordIds: nextDeletedIds,
+      };
+    });
+  };
+
+  const handleUpdateChatCooldown = (seconds: number) => {
+    updateAndPersist((prev) => ({
+      ...prev,
+      settings: {
+        ...prev.settings,
+        liveChatCooldownSeconds: Math.max(0, seconds),
+      },
+    }));
+  };
+
+  const handleUpdateAutoClearMinutes = (minutes: number) => {
+    updateAndPersist((prev) => ({
+      ...prev,
+      settings: {
+        ...prev.settings,
+        liveChatAutoClearMinutes: Math.max(0, minutes),
+        liveChatLastClearedAt: new Date().toISOString(),
+      },
+    }));
+  };
+
+  const handleClearPublicChatNow = () => {
+    updateAndPersistChatFast((prev) => {
+      const clearedIds = (prev.liveChatMessages || []).map((m) => m.id);
+      return {
+        ...prev,
+        liveChatMessages: [],
+        deletedRecordIds: Array.from(
+          new Set([...(prev.deletedRecordIds || []), ...clearedIds])
+        ),
+        settings: {
+          ...prev.settings,
+          liveChatLastClearedAt: new Date().toISOString(),
+        },
+      };
+    });
+  };
+
+  const handleClearPrivateChatSession = (keepOnlyPartnerUsername?: string) => {
+    const myName = (currentUser?.username || 'زائر').trim().toLowerCase();
+    updateAndPersist((prev) => {
+      if (!keepOnlyPartnerUsername) {
+        // Delete all private chat messages & statuses involving current user
+        const remainingMsgs = (prev.privateChatMessages || []).filter((m) => {
+          const sName = m.senderUsername.trim().toLowerCase();
+          const rName = m.receiverUsername.trim().toLowerCase();
+          const involvesMe =
+            m.senderId === visitorId ||
+            m.receiverId === visitorId ||
+            sName === myName ||
+            rName === myName;
+          return !involvesMe;
+        });
+        return {
+          ...prev,
+          privateChatMessages: remainingMsgs,
+        };
+      } else {
+        const keepPartnerNorm = keepOnlyPartnerUsername.trim().toLowerCase();
+        // Keep only messages with `keepOnlyPartnerUsername`, delete any previously open private chat with other partners
+        const remainingMsgs = (prev.privateChatMessages || []).filter((m) => {
+          const sName = m.senderUsername.trim().toLowerCase();
+          const rName = m.receiverUsername.trim().toLowerCase();
+          const involvesMe =
+            m.senderId === visitorId ||
+            m.receiverId === visitorId ||
+            sName === myName ||
+            rName === myName;
+          if (!involvesMe) return true;
+          const involvesKeepPartner =
+            sName === keepPartnerNorm || rName === keepPartnerNorm;
+          return involvesKeepPartner;
+        });
+        return {
+          ...prev,
+          privateChatMessages: remainingMsgs,
+        };
+      }
+    });
+  };
+
+  const handleDeletePrivateChatMessage = (msgId: string) => {
+    updateAndPersist((prev) => ({
+      ...prev,
+      privateChatMessages: (prev.privateChatMessages || []).filter(
+        (m) => m.id !== msgId
+      ),
+      deletedRecordIds: Array.from(
+        new Set([...(prev.deletedRecordIds || []), msgId])
+      ),
+    }));
+  };
+
+  const handleDeletePrivateConversation = (partnerUsername: string) => {
+    const myName = (currentUser?.username || 'زائر').trim().toLowerCase();
+    const partnerNorm = partnerUsername.trim().toLowerCase();
+    updateAndPersist((prev) => {
+      const toRemoveIds: string[] = [];
+      const remaining = (prev.privateChatMessages || []).filter((m) => {
+        const sName = m.senderUsername.trim().toLowerCase();
+        const rName = m.receiverUsername.trim().toLowerCase();
+        const involvesMe =
+          m.senderId === visitorId ||
+          m.receiverId === visitorId ||
+          sName === myName ||
+          rName === myName;
+        const involvesPartner = sName === partnerNorm || rName === partnerNorm;
+        if (involvesMe && involvesPartner) {
+          toRemoveIds.push(m.id);
+          return false;
+        }
+        return true;
+      });
+      return {
+        ...prev,
+        privateChatMessages: remaining,
+        deletedRecordIds: Array.from(
+          new Set([...(prev.deletedRecordIds || []), ...toRemoveIds])
+        ),
+      };
+    });
+  };
+
+  const handleTogglePinPrivateChatMessage = (msgId: string) => {
+    updateAndPersist((prev) => ({
+      ...prev,
+      privateChatMessages: (prev.privateChatMessages || []).map((m) =>
+        m.id === msgId ? { ...m, isPinned: !m.isPinned } : m
+      ),
+    }));
+  };
+
+  const handleApplyChatPenalty = (
+    targetUserId: string,
+    targetUsername: string,
+    actionType: 'ban' | 'suspend',
+    durationLabel: 'ساعة' | 'ساعتين' | 'يوم'
+  ) => {
+    const durationMs =
+      durationLabel === 'ساعة'
+        ? 3600 * 1000
+        : durationLabel === 'ساعتين'
+        ? 2 * 3600 * 1000
+        : 24 * 3600 * 1000;
+    const expiresAt = new Date(Date.now() + durationMs).toISOString();
+    const penalty: ChatModerationPenalty = {
+      id: `pen-${Date.now()}`,
+      targetUserId,
+      targetUsername,
+      actionType,
+      durationLabel,
+      expiresAt,
+      createdAt: new Date().toISOString(),
+    };
+    const actionArabic = actionType === 'ban' ? 'حظره' : 'تعليقه';
+    const sysMsg: LiveChatMessageItem = {
+      id: `chat-pen-${Date.now()}`,
+      authorId: 'system-admin',
+      authorUsername: 'النظام',
+      text: `تنبيه إداري: المستخدم (${targetUsername}) تم ${actionArabic} لمدة ${durationLabel}`,
+      textColor: '#F87171',
+      reports: [],
+      createdAt: new Date().toISOString(),
+      isSystemNotification: true,
+      targetUsername,
+    };
+
+    updateAndPersist((prev) => ({
+      ...prev,
+      chatPenalties: [
+        ...(prev.chatPenalties || []).filter(
+          (p) =>
+            p.targetUserId !== targetUserId &&
+            p.targetUsername.trim().toLowerCase() !==
+              targetUsername.trim().toLowerCase()
+        ),
+        penalty,
+      ],
+      liveChatMessages: [...(prev.liveChatMessages || []).slice(-49), sysMsg],
+    }));
+  };
+
+  const handleSendPrivateMessage = (
+    receiverId: string,
+    receiverUsername: string,
+    text: string,
+    textColor?: string
+  ) => {
+    const senderName = currentUser?.username || 'زائر';
+    const senderKeyId = visitorId;
+    const senderKeyName = senderName.trim().toLowerCase();
+    const receiverKeyId = receiverId;
+    const receiverKeyName = receiverUsername.trim().toLowerCase();
+
+    const newPrivMsg: PrivateChatMessageItem = {
+      id: `pm-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      senderId: senderKeyId,
+      senderUsername: senderName,
+      receiverId: receiverKeyId,
+      receiverUsername,
+      text,
+      textColor: textColor || '#F8FAFC',
+      isRead: false,
+      likes: [],
+      dislikes: [],
+      hearts: [],
+      reports: [],
+      createdAt: new Date().toISOString(),
+    };
+
+    updateAndPersistChatFast((prev) => {
+      // Do not allow messaging if either user has blocked the other
+      const blockedMap = prev.userBlockedMap || {};
+      const myBlocked1 = blockedMap[senderKeyId] || [];
+      const myBlocked2 = blockedMap[senderKeyName] || [];
+      const recBlocked1 = blockedMap[receiverKeyId] || [];
+      const recBlocked2 = blockedMap[receiverKeyName] || [];
+
+      const iBlockedReceiver = [...myBlocked1, ...myBlocked2].some(
+        (k) =>
+          k === receiverKeyId ||
+          k.trim().toLowerCase() === receiverKeyName
+      );
+      const receiverBlockedMe = [...recBlocked1, ...recBlocked2].some(
+        (k) =>
+          k === senderKeyId ||
+          k.trim().toLowerCase() === senderKeyName
+      );
+      if (iBlockedReceiver || receiverBlockedMe) {
+        return prev;
+      }
+
+      const nextStatuses: Record<string, PrivateChatStatus> = {
+        ...(prev.privateChatStatuses || {}),
+      };
+
+      // Check all possible key combinations between sender and receiver
+      const senderCandidates = Array.from(
+        new Set(
+          [
+            senderKeyId,
+            currentUser?.id || '',
+            senderName.trim(),
+            senderKeyName,
+            (currentUser?.accountName || '').trim().toLowerCase(),
+          ].filter(Boolean)
+        )
+      );
+      const receiverCandidates = Array.from(
+        new Set(
+          [receiverKeyId, receiverUsername.trim(), receiverKeyName].filter(Boolean)
+        )
+      );
+
+      // If the current sender had previously rejected receiver ("لا"), and now sender initiates a message to receiver, re-open chat!
+      senderCandidates.forEach((sk) => {
+        receiverCandidates.forEach((rk) => {
+          const k = `${sk}__${rk}`;
+          if (nextStatuses[k] === 'rejected') {
+            nextStatuses[k] = 'accepted';
+          }
+        });
+      });
+
+      // Check if receiver has already accepted or rejected sender under ANY key combination
+      let existingRecStatus: PrivateChatStatus | undefined;
+      for (const rk of receiverCandidates) {
+        for (const sk of senderCandidates) {
+          const st = nextStatuses[`${rk}__${sk}`];
+          if (st === 'accepted') {
+            existingRecStatus = 'accepted';
+            break;
+          }
+          if (st === 'rejected' && !existingRecStatus) {
+            existingRecStatus = 'rejected';
+          }
+          if (st === 'pending' && !existingRecStatus) {
+            existingRecStatus = 'pending';
+          }
+        }
+        if (existingRecStatus === 'accepted') break;
+      }
+
+      // Also check if sender had already accepted receiver (mutual conversation already active)
+      if (!existingRecStatus) {
+        for (const sk of senderCandidates) {
+          for (const rk of receiverCandidates) {
+            if (nextStatuses[`${sk}__${rk}`] === 'accepted') {
+              existingRecStatus = 'accepted';
+              break;
+            }
+          }
+          if (existingRecStatus === 'accepted') break;
+        }
+      }
+
+      // Only mark as 'pending' if receiver hasn't accepted or responded yet
+      const recKey1 = `${receiverKeyId}__${senderKeyId}`;
+      const recKey2 = `${receiverKeyName}__${senderKeyName}`;
+      if (!existingRecStatus) {
+        nextStatuses[recKey1] = 'pending';
+        nextStatuses[recKey2] = 'pending';
+      } else if (existingRecStatus === 'accepted') {
+        nextStatuses[recKey1] = 'accepted';
+        nextStatuses[recKey2] = 'accepted';
+      }
+
+      const nextTyping = { ...(prev.chatTypingMap || {}) };
+      delete nextTyping[senderKeyId];
+      delete nextTyping[senderKeyName];
+
+      return {
+        ...prev,
+        privateChatMessages: [
+          ...(prev.privateChatMessages || []).slice(-299),
+          newPrivMsg,
+        ],
+        privateChatStatuses: nextStatuses,
+        chatTypingMap: nextTyping,
+      };
+    });
+  };
+
+  const handleTogglePrivateMessageReaction = (
+    msgId: string,
+    reaction: 'like' | 'dislike' | 'heart'
+  ) => {
+    updateAndPersistChatFast((prev) => ({
+      ...prev,
+      privateChatMessages: (prev.privateChatMessages || []).map((m) => {
+        if (m.id !== msgId) return m;
+        const currentLikes = m.likes || [];
+        const currentDislikes = m.dislikes || [];
+        const currentHearts = m.hearts || [];
+
+        if (reaction === 'like') {
+          const hasLiked = currentLikes.includes(visitorId);
+          return {
+            ...m,
+            likes: hasLiked
+              ? currentLikes.filter((id) => id !== visitorId)
+              : [...currentLikes, visitorId],
+            dislikes: currentDislikes.filter((id) => id !== visitorId),
+          };
+        }
+        if (reaction === 'dislike') {
+          const hasDisliked = currentDislikes.includes(visitorId);
+          return {
+            ...m,
+            dislikes: hasDisliked
+              ? currentDislikes.filter((id) => id !== visitorId)
+              : [...currentDislikes, visitorId],
+            likes: currentLikes.filter((id) => id !== visitorId),
+          };
+        }
+        const hasHeart = currentHearts.includes(visitorId);
+        return {
+          ...m,
+          hearts: hasHeart
+            ? currentHearts.filter((id) => id !== visitorId)
+            : [...currentHearts, visitorId],
+        };
+      }),
+    }));
+  };
+
+  const handleReportPrivateChatMessage = (
+    msgId: string,
+    reportedUserId: string,
+    reportedUsername: string,
+    messageText: string,
+    reason: CommunityReportReason
+  ) => {
+    const reporterName = currentUser?.username || 'زائر';
+    const nowIso = new Date().toISOString();
+    const newChatReport: PrivateChatReportItem = {
+      id: `pcrep-msg-${Date.now()}`,
+      reporterId: visitorId,
+      reporterUsername: reporterName,
+      reportedUserId: reportedUserId || reportedUsername,
+      reportedUsername,
+      reason,
+      sampleMessage: messageText,
+      createdAt: nowIso,
+    };
+    const newAdminMsg: AdminMessage = {
+      id: `msg-rep-${Date.now()}`,
+      senderId: visitorId,
+      senderUsername: reporterName,
+      senderPhone: currentUser?.phone || 'بلاغ شات خاص',
+      content: `بلاغ عن رسالة في محادثة خاصة ضد (${reportedUsername}) - السبب: ${reason} - نص الرسالة: "${messageText}"`,
+      isRead: false,
+      createdAt: nowIso,
+    };
+
+    updateAndPersistChatFast((prev) => ({
+      ...prev,
+      privateChatMessages: (prev.privateChatMessages || []).map((m) =>
+        m.id === msgId
+          ? {
+              ...m,
+              reports: [
+                ...(m.reports || []),
+                {
+                  id: `rep-pm-${Date.now()}`,
+                  reporterId: visitorId,
+                  reporterUsername: reporterName,
+                  reason,
+                  createdAt: nowIso,
+                },
+              ],
+            }
+          : m
+      ),
+      privateChatReports: [newChatReport, ...(prev.privateChatReports || [])],
+      messages: [newAdminMsg, ...(prev.messages || [])],
+    }));
+  };
+
+  const handleReportUserInPrivateChat = (
+    reportedUserId: string,
+    reportedUsername: string,
+    reason: string,
+    sampleMessage?: string
+  ) => {
+    const reporterName = currentUser?.username || 'زائر';
+    const nowIso = new Date().toISOString();
+    const newReport: PrivateChatReportItem = {
+      id: `pcrep-usr-${Date.now()}`,
+      reporterId: visitorId,
+      reporterUsername: reporterName,
+      reportedUserId: reportedUserId || reportedUsername,
+      reportedUsername,
+      reason: reason || 'إبلاغ عن إساءة في المحادثة الخاصة',
+      sampleMessage: sampleMessage || 'بلاغ من داخل شات المحادثة الخاصة',
+      createdAt: nowIso,
+    };
+    const newAdminMsg: AdminMessage = {
+      id: `msg-chatrep-${Date.now()}`,
+      senderId: visitorId,
+      senderUsername: reporterName,
+      senderPhone: currentUser?.phone || 'بلاغ محادثة',
+      content: `بلاغ من شات المحادثة ضد (${reportedUsername}) - السبب: ${newReport.reason}${
+        sampleMessage ? ` - آخر رسالة: "${sampleMessage}"` : ''
+      }`,
+      isRead: false,
+      createdAt: nowIso,
+    };
+
+    updateAndPersistChatFast((prev) => ({
+      ...prev,
+      privateChatReports: [newReport, ...(prev.privateChatReports || [])],
+      messages: [newAdminMsg, ...(prev.messages || [])],
+    }));
+  };
+
+  const handleDismissPrivateChatReport = (reportId: string) => {
+    updateAndPersistChatFast((prev) => ({
+      ...prev,
+      privateChatReports: (prev.privateChatReports || []).filter(
+        (r) => r.id !== reportId
+      ),
+    }));
+  };
+
+  const handleMarkPrivateMessagesRead = (partnerUsername: string) => {
+    if (!partnerUsername) return;
+    const partnerNorm = partnerUsername.trim().toLowerCase();
+    const myNorm = (currentUser?.username || 'زائر').trim().toLowerCase();
+    const nowIso = new Date().toISOString();
+    updateAndPersistChatFast((prev) => {
+      const currentList = prev.privateChatMessages || [];
+      const hasUnreadFromPartner = currentList.some((m) => {
+        const sNorm = m.senderUsername.trim().toLowerCase();
+        const rNorm = m.receiverUsername.trim().toLowerCase();
+        return (
+          sNorm === partnerNorm &&
+          (rNorm === myNorm || m.receiverId === visitorId) &&
+          !m.isRead
+        );
+      });
+      if (!hasUnreadFromPartner) return prev;
+      return {
+        ...prev,
+        privateChatMessages: currentList.map((m) => {
+          const sNorm = m.senderUsername.trim().toLowerCase();
+          const rNorm = m.receiverUsername.trim().toLowerCase();
+          if (
+            sNorm === partnerNorm &&
+            (rNorm === myNorm || m.receiverId === visitorId) &&
+            !m.isRead
+          ) {
+            return { ...m, isRead: true, readAt: nowIso };
+          }
+          return m;
+        }),
+      };
+    });
+  };
+
+  const handleSetChatTypingStatus = (targetKey: string, isTyping: boolean) => {
+    const senderName = currentUser?.username || 'زائر';
+    const senderNorm = senderName.trim().toLowerCase();
+    const nowMs = Date.now();
+    const cleanTargetNorm = (targetKey || 'public')
+      .replace(/^private:/i, '')
+      .trim()
+      .toLowerCase();
+    updateAndPersistChatFast((prev) => {
+      const nextMap = { ...(prev.chatTypingMap || {}) };
+      Object.keys(nextMap).forEach((k) => {
+        if (nowMs - nextMap[k].updatedAt > 6500) {
+          delete nextMap[k];
+        }
+      });
+
+      if (!isTyping) {
+        if (!nextMap[senderNorm] && !nextMap[visitorId]) return prev;
+        delete nextMap[senderNorm];
+        delete nextMap[visitorId];
+      } else {
+        nextMap[senderNorm] = {
+          userId: visitorId,
+          username: senderName,
+          targetKey: cleanTargetNorm,
+          chatType: cleanTargetNorm === 'public' ? 'public' : 'private',
+          targetUsername:
+            cleanTargetNorm === 'public' ? undefined : cleanTargetNorm,
+          updatedAt: nowMs,
+        };
+      }
+
+      return {
+        ...prev,
+        chatTypingMap: nextMap,
+      };
+    });
+  };
+
+  const handleRespondPrivateChatRequest = (
+    partnerKey: string,
+    status: PrivateChatStatus,
+    partnerUserId?: string
+  ) => {
+    const myName = (currentUser?.username || 'زائر').trim();
+    const myNameKey = myName.toLowerCase();
+    const myAccountKey = (currentUser?.accountName || '').trim().toLowerCase();
+    const cleanPartner = partnerKey.trim();
+    const partnerNorm = cleanPartner.toLowerCase();
+
+    const myKeys = Array.from(
+      new Set(
+        [visitorId, currentUser?.id || '', myName, myNameKey, myAccountKey].filter(
+          Boolean
+        )
+      )
+    );
+    const partnerKeys = Array.from(
+      new Set([cleanPartner, partnerNorm, partnerUserId || ''].filter(Boolean))
+    );
+
+    updateAndPersistChatFast((prev) => {
+      const nextStatuses: Record<string, PrivateChatStatus> = {
+        ...(prev.privateChatStatuses || {}),
+      };
+      myKeys.forEach((mk) => {
+        partnerKeys.forEach((pk) => {
+          nextStatuses[`${mk}__${pk}`] = status;
+          if (status === 'accepted') {
+            nextStatuses[`${pk}__${mk}`] = 'accepted';
+          }
+        });
+      });
+      return {
+        ...prev,
+        privateChatStatuses: nextStatuses,
+      };
+    });
+  };
+
+  const handleBlockUserInChat = (
+    blockedUserId: string,
+    blockedUsername: string,
+    reportReason?: string,
+    sampleMessage?: string
+  ) => {
+    const myName = currentUser?.username || 'زائر';
+    const myNameKey = myName.trim().toLowerCase();
+    const cleanBlockedUsername = blockedUsername.trim();
+    const targetNameKey = cleanBlockedUsername.toLowerCase();
+
+    updateAndPersistChatFast((prev) => {
+      const prevMap = prev.userBlockedMap || {};
+      const myBlocked1 = new Set(prevMap[visitorId] || []);
+      const myBlocked2 = new Set(prevMap[myNameKey] || []);
+      if (blockedUserId) {
+        myBlocked1.add(blockedUserId);
+        myBlocked2.add(blockedUserId);
+      }
+      myBlocked1.add(cleanBlockedUsername);
+      myBlocked1.add(targetNameKey);
+      myBlocked2.add(cleanBlockedUsername);
+      myBlocked2.add(targetNameKey);
+
+      const nextReports = [...(prev.privateChatReports || [])];
+      const nextMessages = [...(prev.messages || [])];
+      if (reportReason) {
+        const nowIso = new Date().toISOString();
+        nextReports.unshift({
+          id: `pcrep-${Date.now()}`,
+          reporterId: visitorId,
+          reporterUsername: myName,
+          reportedUserId: blockedUserId || cleanBlockedUsername,
+          reportedUsername: cleanBlockedUsername,
+          reason: reportReason,
+          sampleMessage: sampleMessage || 'تم حظر المستخدم والإبلاغ عنه من الشات الخاص',
+          createdAt: nowIso,
+        });
+        nextMessages.unshift({
+          id: `msg-blkrep-${Date.now()}`,
+          senderId: visitorId,
+          senderUsername: myName,
+          senderPhone: currentUser?.phone || 'حظر وإبلاغ',
+          content: `بلاغ وحظر من الشات الخاص ضد (${cleanBlockedUsername}) - السبب: ${reportReason}`,
+          isRead: false,
+          createdAt: nowIso,
+        });
+      }
+
+      return {
+        ...prev,
+        userBlockedMap: {
+          ...prevMap,
+          [visitorId]: Array.from(myBlocked1),
+          [myNameKey]: Array.from(myBlocked2),
+        },
+        privateChatReports: nextReports,
+        messages: nextMessages,
+      };
+    });
+  };
+
+  const handleUnblockUserInChat = (targetUserIdOrName: string) => {
+    const myName = currentUser?.username || 'زائر';
+    const myNameKey = myName.trim().toLowerCase();
+    const cleanTarget = targetUserIdOrName.trim();
+    const targetLower = cleanTarget.toLowerCase();
+
+    updateAndPersistChatFast((prev) => {
+      const prevMap = prev.userBlockedMap || {};
+      // Also find any matching user ID/username from users list so both ID and username are removed
+      const matchedUser = prev.users.find(
+        (u) =>
+          u.id === cleanTarget ||
+          u.username.trim().toLowerCase() === targetLower
+      );
+      const keysToRemove = new Set<string>([
+        cleanTarget,
+        targetLower,
+        ...(matchedUser
+          ? [
+              matchedUser.id,
+              matchedUser.username.trim(),
+              matchedUser.username.trim().toLowerCase(),
+            ]
+          : []),
+      ]);
+
+      const filterFn = (entry: string) =>
+        !keysToRemove.has(entry) &&
+        !keysToRemove.has(entry.trim().toLowerCase());
+
+      return {
+        ...prev,
+        userBlockedMap: {
+          ...prevMap,
+          [visitorId]: (prevMap[visitorId] || []).filter(filterFn),
+          [myNameKey]: (prevMap[myNameKey] || []).filter(filterFn),
+        },
+      };
+    });
+  };
+
+  const handleDeleteUserAccountFromChat = (
+    targetUserId: string,
+    targetUsername: string
+  ) => {
+    const sysMsg: LiveChatMessageItem = {
+      id: `chat-del-usr-${Date.now()}`,
+      authorId: 'system-admin',
+      authorUsername: 'النظام',
+      text: `تنبيه إداري: المستخدم (${targetUsername}) تم حظره وحذف حسابه من الموقع`,
+      textColor: '#F87171',
+      reports: [],
+      createdAt: new Date().toISOString(),
+      isSystemNotification: true,
+      targetUsername,
+    };
+
+    const permPenalty: ChatModerationPenalty = {
+      id: `pen-perm-${Date.now()}`,
+      targetUserId,
+      targetUsername,
+      actionType: 'ban',
+      durationLabel: 'يوم',
+      expiresAt: new Date(Date.now() + 365 * 24 * 3600 * 1000).toISOString(),
+      createdAt: new Date().toISOString(),
+    };
+
+    updateAndPersist((prev) => {
+      const matchedUsers = prev.users.filter(
+        (u) =>
+          u.id === targetUserId ||
+          u.username.trim().toLowerCase() ===
+            targetUsername.trim().toLowerCase()
+      );
+      const delKeys: string[] = [
+        targetUserId,
+        `user:${targetUsername.trim().toLowerCase()}`,
+      ];
+      matchedUsers.forEach((mu) => {
+        delKeys.push(mu.id);
+        delKeys.push(`user:${mu.username.trim().toLowerCase()}`);
+        if (mu.accountName) {
+          delKeys.push(`acc:${mu.accountName.trim().toLowerCase()}`);
+        }
+      });
+
+      return {
+        ...prev,
+        users: prev.users.filter(
+          (u) =>
+            u.id !== targetUserId &&
+            u.username.trim().toLowerCase() !==
+              targetUsername.trim().toLowerCase()
+        ),
+        deletedRecordIds: Array.from(
+          new Set([...(prev.deletedRecordIds || []), ...delKeys.filter(Boolean)])
+        ),
+        chatPenalties: [...(prev.chatPenalties || []), permPenalty],
+        privateChatReports: (prev.privateChatReports || []).filter(
+          (r) =>
+            r.reportedUserId !== targetUserId &&
+            r.reportedUsername.trim().toLowerCase() !==
+              targetUsername.trim().toLowerCase()
+        ),
+        liveChatMessages: [...(prev.liveChatMessages || []).slice(-49), sysMsg],
+        settings: appendAdminActivityLogToSettings(
+          prev.settings,
+          'حذف حساب',
+          targetUsername
+        ),
+      };
+    });
+  };
+
+  // --- Utilities Submissions ("تقديمات المرافق") & Utility Posts Handlers ---
+  const handleAddStoreCategory = (newCategoryName: string) => {
+    const clean = newCategoryName.trim();
+    if (!clean) return;
+    updateAndPersist((prev) => {
+      const currentCats = prev.settings.storeCategories || [];
+      if (currentCats.some((c) => c.trim() === clean)) return prev;
+      return {
+        ...prev,
+        settings: {
+          ...prev.settings,
+          storeCategories: [...currentCats, clean],
+          updatedAt: Date.now(),
+        },
+      };
+    });
+  };
+
+  const handleAddUtilityType = (newTypeName: string) => {
+    const clean = newTypeName.trim();
+    if (!clean) return;
+    updateAndPersist((prev) => {
+      const currentTypes = prev.settings.utilityTypes || [
+        'تقديم المياه',
+        'تقديم الكهرباء',
+        'تقديم الغاز',
+      ];
+      if (currentTypes.includes(clean)) return prev;
+      return {
+        ...prev,
+        settings: {
+          ...prev.settings,
+          utilityTypes: [...currentTypes, clean],
+          updatedAt: Date.now(),
+        },
+      };
+    });
+  };
+
+  const handleSaveUtilitySubmission = (item: UtilitySubmissionItem) => {
+    updateAndPersist((prev) => {
+      const list = prev.utilitySubmissions || [];
+      const exists = list.some(
+        (u) => u.id === item.id || u.utilityName === item.utilityName
+      );
+      const nextList = exists
+        ? list.map((u) =>
+            u.id === item.id || u.utilityName === item.utilityName ? item : u
+          )
+        : [item, ...list];
+      return {
+        ...prev,
+        utilitySubmissions: nextList,
+      };
+    });
+  };
+
+  const handleDeleteUtilitySubmission = (id: string) => {
+    if (currentUser?.role === 'moderator') return;
+    updateAndPersist((prev) => ({
+      ...prev,
+      utilitySubmissions: (prev.utilitySubmissions || []).filter(
+        (u) => u.id !== id
+      ),
+      deletedRecordIds: Array.from(
+        new Set([...(prev.deletedRecordIds || []), id])
+      ),
+    }));
+  };
+
+  const handleAddUtilityPost = (post: CommunityPostItem) => {
+    updateAndPersist((prev) => ({
+      ...prev,
+      utilityPosts: [post, ...(prev.utilityPosts || [])],
+    }));
+  };
+
+  const handleEditUtilityPost = (
+    postId: string,
+    updatedContent: string,
+    updatedPostType?: CommunityPostType
+  ) => {
+    updateAndPersist((prev) => ({
+      ...prev,
+      utilityPosts: (prev.utilityPosts || []).map((p) =>
+        p.id === postId
+          ? {
+              ...p,
+              content: updatedContent,
+              postType: updatedPostType || p.postType,
+            }
+          : p
+      ),
+    }));
+  };
+
+  const handleUpdateUtilityPostStatus = (
+    postId: string,
+    status: CommunityPostStatus
+  ) => {
+    updateAndPersist((prev) => ({
+      ...prev,
+      utilityPosts: (prev.utilityPosts || []).map((p) =>
+        p.id === postId ? { ...p, status } : p
+      ),
+    }));
+  };
+
+  const handleDeleteUtilityPost = (postId: string) => {
+    updateAndPersist((prev) => {
+      const target = (prev.utilityPosts || []).find((p) => p.id === postId);
+      if (!target) return prev;
+      const isOwner =
+        target.authorId === visitorId ||
+        Boolean(
+          currentUser &&
+            (target.authorId === currentUser.id ||
+              target.authorUsername.trim().toLowerCase() ===
+                currentUser.username.trim().toLowerCase())
+        );
+      if (
+        currentUser?.role !== 'admin' &&
+        currentUser?.role !== 'moderator' &&
+        !isOwner
+      ) {
+        return prev;
+      }
+      return {
+        ...prev,
+        utilityPosts: (prev.utilityPosts || []).filter((p) => p.id !== postId),
+        deletedRecordIds: Array.from(
+          new Set([...(prev.deletedRecordIds || []), postId])
+        ),
+        settings: appendAdminActivityLogToSettings(
+          prev.settings,
+          'حذف منشور (مرافق)',
+          target.authorUsername
+        ),
+      };
+    });
+  };
+
+  const handleTogglePinUtilityPost = (postId: string) => {
+    if (currentUser?.role !== 'admin') return;
+    updateAndPersist((prev) => ({
+      ...prev,
+      utilityPosts: (prev.utilityPosts || []).map((p) =>
+        p.id === postId ? { ...p, isPinned: !p.isPinned } : p
+      ),
+    }));
+  };
+
+  const handleToggleUtilityPostSold = (postId: string) => {
+    updateAndPersist((prev) => ({
+      ...prev,
+      utilityPosts: (prev.utilityPosts || []).map((p) => {
+        if (p.id !== postId) return p;
+        const isOwner =
+          p.authorId === visitorId ||
+          Boolean(
+            currentUser &&
+              (p.authorId === currentUser.id ||
+                p.authorUsername.trim().toLowerCase() ===
+                  currentUser.username.trim().toLowerCase())
+          );
+        if (currentUser?.role !== 'admin' && !isOwner) return p;
+        return { ...p, isSold: !p.isSold };
+      }),
+    }));
+  };
+
+  const handleToggleUtilityPostCommentsDisabled = (postId: string) => {
+    updateAndPersist((prev) => ({
+      ...prev,
+      utilityPosts: (prev.utilityPosts || []).map((p) => {
+        if (p.id !== postId) return p;
+        const isOwner =
+          p.authorId === visitorId ||
+          Boolean(
+            currentUser &&
+              (p.authorId === currentUser.id ||
+                p.authorUsername.trim().toLowerCase() ===
+                  currentUser.username.trim().toLowerCase())
+          );
+        if (currentUser?.role !== 'admin' && !isOwner) return p;
+        return { ...p, commentsDisabled: !p.commentsDisabled };
+      }),
+    }));
+  };
+
+  const handleToggleUtilityPostLike = (postId: string) => {
+    const nowTs = Date.now();
+    updateAndPersist((prev) => ({
+      ...prev,
+      utilityPosts: (prev.utilityPosts || []).map((p) => {
+        if (p.id !== postId) return p;
+        const alreadyLiked = p.likes.includes(visitorId);
+        return {
+          ...p,
+          updatedAt: nowTs,
+          likes: alreadyLiked
+            ? p.likes.filter((id) => id !== visitorId)
+            : [...p.likes, visitorId],
+          dislikes: p.dislikes.filter((id) => id !== visitorId),
+        };
+      }),
+    }));
+  };
+
+  const handleToggleUtilityPostDislike = (postId: string) => {
+    const nowTs = Date.now();
+    updateAndPersist((prev) => ({
+      ...prev,
+      utilityPosts: (prev.utilityPosts || []).map((p) => {
+        if (p.id !== postId) return p;
+        const alreadyDisliked = p.dislikes.includes(visitorId);
+        return {
+          ...p,
+          updatedAt: nowTs,
+          dislikes: alreadyDisliked
+            ? p.dislikes.filter((id) => id !== visitorId)
+            : [...p.dislikes, visitorId],
+          likes: p.likes.filter((id) => id !== visitorId),
+        };
+      }),
+    }));
+  };
+
+  const handleReportUtilityPost = (
+    postId: string,
+    reason: CommunityReportReason
+  ) => {
+    const reporterName = currentUser?.username || 'زائر';
+    updateAndPersist((prev) => ({
+      ...prev,
+      utilityPosts: (prev.utilityPosts || []).map((p) =>
+        p.id === postId
+          ? {
+              ...p,
+              reports: [
+                ...p.reports,
+                {
+                  id: `rep-up-${Date.now()}`,
+                  reporterId: visitorId,
+                  reporterUsername: reporterName,
+                  reason,
+                  createdAt: new Date().toISOString(),
+                },
+              ],
+            }
+          : p
+      ),
+    }));
+  };
+
+  const handleRestoreReportedUtilityPost = (postId: string) => {
+    updateAndPersist((prev) => ({
+      ...prev,
+      utilityPosts: (prev.utilityPosts || []).map((p) =>
+        p.id === postId ? { ...p, reports: [] } : p
+      ),
+    }));
+  };
+
+  const handleAddCommentToUtilityPost = (
+    postId: string,
+    comment: CommunityCommentItem
+  ) => {
+    const nowTs = Date.now();
+    updateAndPersist((prev) => ({
+      ...prev,
+      utilityPosts: (prev.utilityPosts || []).map((p) =>
+        p.id === postId
+          ? {
+              ...p,
+              updatedAt: nowTs,
+              comments: [...p.comments, { ...comment, isHidden: false, updatedAt: nowTs }],
+            }
+          : p
+      ),
+    }));
+  };
+
+  const handleToggleUtilityCommentLike = (
+    postId: string,
+    commentId: string
+  ) => {
+    const nowTs = Date.now();
+    updateAndPersist((prev) => ({
+      ...prev,
+      utilityPosts: (prev.utilityPosts || []).map((p) => {
+        if (p.id !== postId) return p;
+        return {
+          ...p,
+          updatedAt: nowTs,
+          comments: p.comments.map((c) => {
+            if (c.id !== commentId) return c;
+            const liked = c.likes.includes(visitorId);
+            return {
+              ...c,
+              updatedAt: nowTs,
+              likes: liked
+                ? c.likes.filter((id) => id !== visitorId)
+                : [...c.likes, visitorId],
+            };
+          }),
+        };
+      }),
+    }));
+  };
+
+  const handleToggleUtilityCommentEmoji = (
+    postId: string,
+    commentId: string,
+    reaction: CommentEmojiReactionType
+  ) => {
+    const nowTs = Date.now();
+    updateAndPersist((prev) => ({
+      ...prev,
+      utilityPosts: (prev.utilityPosts || []).map((p) => {
+        if (p.id !== postId) return p;
+        return {
+          ...p,
+          updatedAt: nowTs,
+          comments: p.comments.map((c) => {
+            if (c.id !== commentId) return c;
+            const currentArr = c.reactions[reaction] || [];
+            const hasReacted = currentArr.includes(visitorId);
+            return {
+              ...c,
+              updatedAt: nowTs,
+              reactions: {
+                ...c.reactions,
+                [reaction]: hasReacted
+                  ? currentArr.filter((id) => id !== visitorId)
+                  : [...currentArr, visitorId],
+              },
+            };
+          }),
+        };
+      }),
+    }));
+  };
+
+  const handleAddReplyToUtilityComment = (
+    postId: string,
+    commentId: string,
+    reply: CommunityCommentReply
+  ) => {
+    const nowTs = Date.now();
+    updateAndPersist((prev) => ({
+      ...prev,
+      utilityPosts: (prev.utilityPosts || []).map((p) => {
+        if (p.id !== postId) return p;
+        return {
+          ...p,
+          updatedAt: nowTs,
+          comments: p.comments.map((c) =>
+            c.id === commentId
+              ? { ...c, updatedAt: nowTs, replies: [...c.replies, reply] }
+              : c
+          ),
+        };
+      }),
+    }));
+  };
+
+  const handleReportUtilityComment = (
+    postId: string,
+    commentId: string,
+    reason: CommunityReportReason
+  ) => {
+    const reporterName = currentUser?.username || 'زائر';
+    const nowTs = Date.now();
+    updateAndPersist((prev) => ({
+      ...prev,
+      utilityPosts: (prev.utilityPosts || []).map((p) => {
+        if (p.id !== postId) return p;
+        return {
+          ...p,
+          updatedAt: nowTs,
+          comments: p.comments.map((c) =>
+            c.id === commentId
+              ? {
+                  ...c,
+                  updatedAt: nowTs,
+                  reports: [
+                    ...c.reports,
+                    {
+                      id: `rep-uc-${nowTs}`,
+                      reporterId: visitorId,
+                      reporterUsername: reporterName,
+                      reason,
+                      createdAt: new Date().toISOString(),
+                    },
+                  ],
+                }
+              : c
+          ),
+        };
+      }),
+    }));
+  };
+
+  const handleDeleteUtilityComment = (postId: string, commentId: string) => {
+    const nowTs = Date.now();
+    updateAndPersist((prev) => {
+      const targetPost = (prev.utilityPosts || []).find((p) => p.id === postId);
+      if (!targetPost) return prev;
+      const isPostOwner =
+        targetPost.authorId === visitorId ||
+        Boolean(
+          currentUser &&
+            (targetPost.authorId === currentUser.id ||
+              targetPost.authorUsername.trim().toLowerCase() ===
+                currentUser.username.trim().toLowerCase())
+        );
+      if (currentUser?.role !== 'admin' && !isPostOwner) return prev;
+      return {
+        ...prev,
+        deletedRecordIds: Array.from(
+          new Set([...(prev.deletedRecordIds || []), commentId])
+        ),
+        utilityPosts: (prev.utilityPosts || []).map((p) =>
+          p.id === postId
+            ? {
+                ...p,
+                updatedAt: nowTs,
+                comments: p.comments.filter((c) => c.id !== commentId),
+              }
+            : p
+        ),
+      };
+    });
+  };
+
+  const handleEditUtilityComment = (
+    postId: string,
+    commentId: string,
+    newText: string
+  ) => {
+    const clean = newText.trim();
+    if (!clean) return;
+    const nowTs = Date.now();
+    updateAndPersist((prev) => {
+      const targetPost = (prev.utilityPosts || []).find((p) => p.id === postId);
+      if (!targetPost) return prev;
+      const isPostOwner =
+        targetPost.authorId === visitorId ||
+        Boolean(
+          currentUser &&
+            (targetPost.authorId === currentUser.id ||
+              targetPost.authorUsername.trim().toLowerCase() ===
+                currentUser.username.trim().toLowerCase())
+        );
+      if (currentUser?.role !== 'admin' && !isPostOwner) return prev;
+      return {
+        ...prev,
+        utilityPosts: (prev.utilityPosts || []).map((p) =>
+          p.id === postId
+            ? {
+                ...p,
+                updatedAt: nowTs,
+                comments: p.comments.map((c) =>
+                  c.id === commentId ? { ...c, text: clean, updatedAt: nowTs } : c
+                ),
+              }
+            : p
+        ),
+      };
+    });
+  };
+
+  const handleEditUtilityReply = (
+    postId: string,
+    commentId: string,
+    replyId: string,
+    newText: string
+  ) => {
+    const clean = newText.trim();
+    if (!clean) return;
+    const nowTs = Date.now();
+    updateAndPersist((prev) => {
+      const targetPost = (prev.utilityPosts || []).find((p) => p.id === postId);
+      if (!targetPost) return prev;
+      const isPostOwner =
+        targetPost.authorId === visitorId ||
+        Boolean(
+          currentUser &&
+            (targetPost.authorId === currentUser.id ||
+              targetPost.authorUsername.trim().toLowerCase() ===
+                currentUser.username.trim().toLowerCase())
+        );
+      if (currentUser?.role !== 'admin' && !isPostOwner) return prev;
+      return {
+        ...prev,
+        utilityPosts: (prev.utilityPosts || []).map((p) =>
+          p.id === postId
+            ? {
+                ...p,
+                updatedAt: nowTs,
+                comments: p.comments.map((c) =>
+                  c.id === commentId
+                    ? {
+                        ...c,
+                        updatedAt: nowTs,
+                        replies: (c.replies || []).map((r) =>
+                          r.id === replyId
+                            ? { ...r, text: clean, updatedAt: nowTs }
+                            : r
+                        ),
+                      }
+                    : c
+                ),
+              }
+            : p
+        ),
+      };
+    });
+  };
+
+  const handleDeleteUtilityReply = (
+    postId: string,
+    commentId: string,
+    replyId: string
+  ) => {
+    const nowTs = Date.now();
+    updateAndPersist((prev) => {
+      const targetPost = (prev.utilityPosts || []).find((p) => p.id === postId);
+      if (!targetPost) return prev;
+      const isPostOwner =
+        targetPost.authorId === visitorId ||
+        Boolean(
+          currentUser &&
+            (targetPost.authorId === currentUser.id ||
+              targetPost.authorUsername.trim().toLowerCase() ===
+                currentUser.username.trim().toLowerCase())
+        );
+      if (currentUser?.role !== 'admin' && !isPostOwner) return prev;
+      return {
+        ...prev,
+        deletedRecordIds: Array.from(
+          new Set([...(prev.deletedRecordIds || []), replyId])
+        ),
+        utilityPosts: (prev.utilityPosts || []).map((p) =>
+          p.id === postId
+            ? {
+                ...p,
+                updatedAt: nowTs,
+                comments: p.comments.map((c) =>
+                  c.id === commentId
+                    ? {
+                        ...c,
+                        updatedAt: nowTs,
+                        replies: (c.replies || []).filter((r) => r.id !== replyId),
+                      }
+                    : c
+                ),
+              }
+            : p
+        ),
+      };
+    });
+  };
+
+  const handleRestoreReportedUtilityComment = (
+    postId: string,
+    commentId: string
+  ) => {
+    const nowTs = Date.now();
+    updateAndPersist((prev) => ({
+      ...prev,
+      utilityPosts: (prev.utilityPosts || []).map((p) => {
+        if (p.id !== postId) return p;
+        return {
+          ...p,
+          updatedAt: nowTs,
+          comments: p.comments.map((c) =>
+            c.id === commentId ? { ...c, updatedAt: nowTs, reports: [] } : c
+          ),
+        };
+      }),
+    }));
+  };
+
+  const handleTogglePinUtilityComment = (postId: string, commentId: string) => {
+    const nowTs = Date.now();
+    updateAndPersist((prev) => ({
+      ...prev,
+      utilityPosts: (prev.utilityPosts || []).map((p) => {
+        if (p.id !== postId) return p;
+        const isOwner =
+          p.authorId === visitorId ||
+          Boolean(
+            currentUser &&
+              (p.authorId === currentUser.id ||
+                p.authorUsername.trim().toLowerCase() ===
+                  currentUser.username.trim().toLowerCase())
+          );
+        if (currentUser?.role !== 'admin' && !isOwner) return p;
+        return {
+          ...p,
+          updatedAt: nowTs,
+          comments: p.comments.map((c) =>
+            c.id === commentId
+              ? { ...c, updatedAt: nowTs, isPinned: !c.isPinned }
+              : c
+          ),
+        };
+      }),
+    }));
+  };
+
+  const handleToggleHideUtilityComment = (postId: string, commentId: string) => {
+    const nowTs = Date.now();
+    updateAndPersist((prev) => ({
+      ...prev,
+      utilityPosts: (prev.utilityPosts || []).map((p) => {
+        if (p.id !== postId) return p;
+        return {
+          ...p,
+          updatedAt: nowTs,
+          comments: p.comments.map((c) =>
+            c.id === commentId
+              ? { ...c, updatedAt: nowTs, isHidden: !c.isHidden }
+              : c
+          ),
+        };
+      }),
+    }));
+  };
+
+  // --- Buy & Sell (بيع واشتري) Posts Handlers ---
+  const handleAddBuySellPost = (post: CommunityPostItem) => {
+    updateAndPersist((prev) => ({
+      ...prev,
+      buySellPosts: [post, ...(prev.buySellPosts || [])],
+    }));
+  };
+
+  const handleEditBuySellPost = (
+    postId: string,
+    updatedContent: string,
+    updatedPostType?: CommunityPostType
+  ) => {
+    updateAndPersist((prev) => ({
+      ...prev,
+      buySellPosts: (prev.buySellPosts || []).map((p) =>
+        p.id === postId
+          ? {
+              ...p,
+              content: updatedContent,
+              postType: updatedPostType || p.postType,
+            }
+          : p
+      ),
+    }));
+  };
+
+  const handleUpdateBuySellPostStatus = (
+    postId: string,
+    status: CommunityPostStatus
+  ) => {
+    updateAndPersist((prev) => ({
+      ...prev,
+      buySellPosts: (prev.buySellPosts || []).map((p) =>
+        p.id === postId ? { ...p, status } : p
+      ),
+    }));
+  };
+
+  const handleDeleteBuySellPost = (postId: string) => {
+    updateAndPersist((prev) => {
+      const target = (prev.buySellPosts || []).find((p) => p.id === postId);
+      if (!target) return prev;
+      const isOwner =
+        target.authorId === visitorId ||
+        Boolean(
+          currentUser &&
+            (target.authorId === currentUser.id ||
+              target.authorUsername.trim().toLowerCase() ===
+                currentUser.username.trim().toLowerCase())
+        );
+      if (
+        currentUser?.role !== 'admin' &&
+        currentUser?.role !== 'moderator' &&
+        !isOwner
+      ) {
+        return prev;
+      }
+      return {
+        ...prev,
+        buySellPosts: (prev.buySellPosts || []).filter((p) => p.id !== postId),
+        deletedRecordIds: Array.from(
+          new Set([...(prev.deletedRecordIds || []), postId])
+        ),
+        settings: appendAdminActivityLogToSettings(
+          prev.settings,
+          'حذف منشور (بيع واشتري)',
+          target.authorUsername
+        ),
+      };
+    });
+  };
+
+  const handleTogglePinBuySellPost = (postId: string) => {
+    if (currentUser?.role !== 'admin') return;
+    updateAndPersist((prev) => ({
+      ...prev,
+      buySellPosts: (prev.buySellPosts || []).map((p) =>
+        p.id === postId ? { ...p, isPinned: !p.isPinned } : p
+      ),
+    }));
+  };
+
+  const handleToggleBuySellPostSold = (postId: string) => {
+    updateAndPersist((prev) => ({
+      ...prev,
+      buySellPosts: (prev.buySellPosts || []).map((p) => {
+        if (p.id !== postId) return p;
+        const isOwner =
+          p.authorId === visitorId ||
+          Boolean(
+            currentUser &&
+              (p.authorId === currentUser.id ||
+                p.authorUsername.trim().toLowerCase() ===
+                  currentUser.username.trim().toLowerCase())
+          );
+        if (currentUser?.role !== 'admin' && !isOwner) return p;
+        return { ...p, isSold: !p.isSold };
+      }),
+    }));
+  };
+
+  const handleToggleBuySellPostCommentsDisabled = (postId: string) => {
+    updateAndPersist((prev) => ({
+      ...prev,
+      buySellPosts: (prev.buySellPosts || []).map((p) => {
+        if (p.id !== postId) return p;
+        const isOwner =
+          p.authorId === visitorId ||
+          Boolean(
+            currentUser &&
+              (p.authorId === currentUser.id ||
+                p.authorUsername.trim().toLowerCase() ===
+                  currentUser.username.trim().toLowerCase())
+          );
+        if (currentUser?.role !== 'admin' && !isOwner) return p;
+        return { ...p, commentsDisabled: !p.commentsDisabled };
+      }),
+    }));
+  };
+
+  const handleToggleBuySellPostLike = (postId: string) => {
+    const nowTs = Date.now();
+    updateAndPersist((prev) => ({
+      ...prev,
+      buySellPosts: (prev.buySellPosts || []).map((p) => {
+        if (p.id !== postId) return p;
+        const alreadyLiked = p.likes.includes(visitorId);
+        return {
+          ...p,
+          updatedAt: nowTs,
+          likes: alreadyLiked
+            ? p.likes.filter((id) => id !== visitorId)
+            : [...p.likes, visitorId],
+          dislikes: p.dislikes.filter((id) => id !== visitorId),
+        };
+      }),
+    }));
+  };
+
+  const handleToggleBuySellPostDislike = (postId: string) => {
+    const nowTs = Date.now();
+    updateAndPersist((prev) => ({
+      ...prev,
+      buySellPosts: (prev.buySellPosts || []).map((p) => {
+        if (p.id !== postId) return p;
+        const alreadyDisliked = p.dislikes.includes(visitorId);
+        return {
+          ...p,
+          updatedAt: nowTs,
+          dislikes: alreadyDisliked
+            ? p.dislikes.filter((id) => id !== visitorId)
+            : [...p.dislikes, visitorId],
+          likes: p.likes.filter((id) => id !== visitorId),
+        };
+      }),
+    }));
+  };
+
+  const handleReportBuySellPost = (
+    postId: string,
+    reason: CommunityReportReason
+  ) => {
+    const reporterName = currentUser?.username || 'زائر';
+    updateAndPersist((prev) => ({
+      ...prev,
+      buySellPosts: (prev.buySellPosts || []).map((p) =>
+        p.id === postId
+          ? {
+              ...p,
+              reports: [
+                ...p.reports,
+                {
+                  id: `rep-bsp-${Date.now()}`,
+                  reporterId: visitorId,
+                  reporterUsername: reporterName,
+                  reason,
+                  createdAt: new Date().toISOString(),
+                },
+              ],
+            }
+          : p
+      ),
+    }));
+  };
+
+  const handleRestoreReportedBuySellPost = (postId: string) => {
+    updateAndPersist((prev) => ({
+      ...prev,
+      buySellPosts: (prev.buySellPosts || []).map((p) =>
+        p.id === postId ? { ...p, reports: [] } : p
+      ),
+    }));
+  };
+
+  const handleAddCommentToBuySellPost = (
+    postId: string,
+    comment: CommunityCommentItem
+  ) => {
+    const nowTs = Date.now();
+    updateAndPersist((prev) => ({
+      ...prev,
+      buySellPosts: (prev.buySellPosts || []).map((p) =>
+        p.id === postId
+          ? {
+              ...p,
+              updatedAt: nowTs,
+              comments: [...p.comments, { ...comment, isHidden: false, updatedAt: nowTs }],
+            }
+          : p
+      ),
+    }));
+  };
+
+  const handleToggleBuySellCommentLike = (
+    postId: string,
+    commentId: string
+  ) => {
+    const nowTs = Date.now();
+    updateAndPersist((prev) => ({
+      ...prev,
+      buySellPosts: (prev.buySellPosts || []).map((p) => {
+        if (p.id !== postId) return p;
+        return {
+          ...p,
+          updatedAt: nowTs,
+          comments: p.comments.map((c) => {
+            if (c.id !== commentId) return c;
+            const liked = c.likes.includes(visitorId);
+            return {
+              ...c,
+              updatedAt: nowTs,
+              likes: liked
+                ? c.likes.filter((id) => id !== visitorId)
+                : [...c.likes, visitorId],
+            };
+          }),
+        };
+      }),
+    }));
+  };
+
+  const handleToggleBuySellCommentEmoji = (
+    postId: string,
+    commentId: string,
+    reaction: CommentEmojiReactionType
+  ) => {
+    const nowTs = Date.now();
+    updateAndPersist((prev) => ({
+      ...prev,
+      buySellPosts: (prev.buySellPosts || []).map((p) => {
+        if (p.id !== postId) return p;
+        return {
+          ...p,
+          updatedAt: nowTs,
+          comments: p.comments.map((c) => {
+            if (c.id !== commentId) return c;
+            const currentArr = c.reactions[reaction] || [];
+            const hasReacted = currentArr.includes(visitorId);
+            return {
+              ...c,
+              updatedAt: nowTs,
+              reactions: {
+                ...c.reactions,
+                [reaction]: hasReacted
+                  ? currentArr.filter((id) => id !== visitorId)
+                  : [...currentArr, visitorId],
+              },
+            };
+          }),
+        };
+      }),
+    }));
+  };
+
+  const handleAddReplyToBuySellComment = (
+    postId: string,
+    commentId: string,
+    reply: CommunityCommentReply
+  ) => {
+    const nowTs = Date.now();
+    updateAndPersist((prev) => ({
+      ...prev,
+      buySellPosts: (prev.buySellPosts || []).map((p) => {
+        if (p.id !== postId) return p;
+        return {
+          ...p,
+          updatedAt: nowTs,
+          comments: p.comments.map((c) =>
+            c.id === commentId
+              ? { ...c, updatedAt: nowTs, replies: [...c.replies, reply] }
+              : c
+          ),
+        };
+      }),
+    }));
+  };
+
+  const handleReportBuySellComment = (
+    postId: string,
+    commentId: string,
+    reason: CommunityReportReason
+  ) => {
+    const reporterName = currentUser?.username || 'زائر';
+    const nowTs = Date.now();
+    updateAndPersist((prev) => ({
+      ...prev,
+      buySellPosts: (prev.buySellPosts || []).map((p) => {
+        if (p.id !== postId) return p;
+        return {
+          ...p,
+          updatedAt: nowTs,
+          comments: p.comments.map((c) =>
+            c.id === commentId
+              ? {
+                  ...c,
+                  updatedAt: nowTs,
+                  reports: [
+                    ...c.reports,
+                    {
+                      id: `rep-bsc-${nowTs}`,
+                      reporterId: visitorId,
+                      reporterUsername: reporterName,
+                      reason,
+                      createdAt: new Date().toISOString(),
+                    },
+                  ],
+                }
+              : c
+          ),
+        };
+      }),
+    }));
+  };
+
+  const handleDeleteBuySellComment = (postId: string, commentId: string) => {
+    const nowTs = Date.now();
+    updateAndPersist((prev) => {
+      const targetPost = (prev.buySellPosts || []).find((p) => p.id === postId);
+      if (!targetPost) return prev;
+      const isPostOwner =
+        targetPost.authorId === visitorId ||
+        Boolean(
+          currentUser &&
+            (targetPost.authorId === currentUser.id ||
+              targetPost.authorUsername.trim().toLowerCase() ===
+                currentUser.username.trim().toLowerCase())
+        );
+      if (currentUser?.role !== 'admin' && !isPostOwner) return prev;
+      return {
+        ...prev,
+        deletedRecordIds: Array.from(
+          new Set([...(prev.deletedRecordIds || []), commentId])
+        ),
+        buySellPosts: (prev.buySellPosts || []).map((p) =>
+          p.id === postId
+            ? {
+                ...p,
+                updatedAt: nowTs,
+                comments: p.comments.filter((c) => c.id !== commentId),
+              }
+            : p
+        ),
+      };
+    });
+  };
+
+  const handleEditBuySellComment = (
+    postId: string,
+    commentId: string,
+    newText: string
+  ) => {
+    const clean = newText.trim();
+    if (!clean) return;
+    const nowTs = Date.now();
+    updateAndPersist((prev) => {
+      const targetPost = (prev.buySellPosts || []).find((p) => p.id === postId);
+      if (!targetPost) return prev;
+      const isPostOwner =
+        targetPost.authorId === visitorId ||
+        Boolean(
+          currentUser &&
+            (targetPost.authorId === currentUser.id ||
+              targetPost.authorUsername.trim().toLowerCase() ===
+                currentUser.username.trim().toLowerCase())
+        );
+      if (currentUser?.role !== 'admin' && !isPostOwner) return prev;
+      return {
+        ...prev,
+        buySellPosts: (prev.buySellPosts || []).map((p) =>
+          p.id === postId
+            ? {
+                ...p,
+                updatedAt: nowTs,
+                comments: p.comments.map((c) =>
+                  c.id === commentId ? { ...c, text: clean, updatedAt: nowTs } : c
+                ),
+              }
+            : p
+        ),
+      };
+    });
+  };
+
+  const handleEditBuySellReply = (
+    postId: string,
+    commentId: string,
+    replyId: string,
+    newText: string
+  ) => {
+    const clean = newText.trim();
+    if (!clean) return;
+    const nowTs = Date.now();
+    updateAndPersist((prev) => {
+      const targetPost = (prev.buySellPosts || []).find((p) => p.id === postId);
+      if (!targetPost) return prev;
+      const isPostOwner =
+        targetPost.authorId === visitorId ||
+        Boolean(
+          currentUser &&
+            (targetPost.authorId === currentUser.id ||
+              targetPost.authorUsername.trim().toLowerCase() ===
+                currentUser.username.trim().toLowerCase())
+        );
+      if (currentUser?.role !== 'admin' && !isPostOwner) return prev;
+      return {
+        ...prev,
+        buySellPosts: (prev.buySellPosts || []).map((p) =>
+          p.id === postId
+            ? {
+                ...p,
+                updatedAt: nowTs,
+                comments: p.comments.map((c) =>
+                  c.id === commentId
+                    ? {
+                        ...c,
+                        updatedAt: nowTs,
+                        replies: (c.replies || []).map((r) =>
+                          r.id === replyId
+                            ? { ...r, text: clean, updatedAt: nowTs }
+                            : r
+                        ),
+                      }
+                    : c
+                ),
+              }
+            : p
+        ),
+      };
+    });
+  };
+
+  const handleDeleteBuySellReply = (
+    postId: string,
+    commentId: string,
+    replyId: string
+  ) => {
+    const nowTs = Date.now();
+    updateAndPersist((prev) => {
+      const targetPost = (prev.buySellPosts || []).find((p) => p.id === postId);
+      if (!targetPost) return prev;
+      const isPostOwner =
+        targetPost.authorId === visitorId ||
+        Boolean(
+          currentUser &&
+            (targetPost.authorId === currentUser.id ||
+              targetPost.authorUsername.trim().toLowerCase() ===
+                currentUser.username.trim().toLowerCase())
+        );
+      if (currentUser?.role !== 'admin' && !isPostOwner) return prev;
+      return {
+        ...prev,
+        deletedRecordIds: Array.from(
+          new Set([...(prev.deletedRecordIds || []), replyId])
+        ),
+        buySellPosts: (prev.buySellPosts || []).map((p) =>
+          p.id === postId
+            ? {
+                ...p,
+                updatedAt: nowTs,
+                comments: p.comments.map((c) =>
+                  c.id === commentId
+                    ? {
+                        ...c,
+                        updatedAt: nowTs,
+                        replies: (c.replies || []).filter((r) => r.id !== replyId),
+                      }
+                    : c
+                ),
+              }
+            : p
+        ),
+      };
+    });
+  };
+
+  const handleRestoreReportedBuySellComment = (
+    postId: string,
+    commentId: string
+  ) => {
+    const nowTs = Date.now();
+    updateAndPersist((prev) => ({
+      ...prev,
+      buySellPosts: (prev.buySellPosts || []).map((p) => {
+        if (p.id !== postId) return p;
+        return {
+          ...p,
+          updatedAt: nowTs,
+          comments: p.comments.map((c) =>
+            c.id === commentId ? { ...c, updatedAt: nowTs, reports: [] } : c
+          ),
+        };
+      }),
+    }));
+  };
+
+  const handleTogglePinBuySellComment = (postId: string, commentId: string) => {
+    const nowTs = Date.now();
+    updateAndPersist((prev) => ({
+      ...prev,
+      buySellPosts: (prev.buySellPosts || []).map((p) => {
+        if (p.id !== postId) return p;
+        const isOwner =
+          p.authorId === visitorId ||
+          Boolean(
+            currentUser &&
+              (p.authorId === currentUser.id ||
+                p.authorUsername.trim().toLowerCase() ===
+                  currentUser.username.trim().toLowerCase())
+          );
+        if (currentUser?.role !== 'admin' && !isOwner) return p;
+        return {
+          ...p,
+          updatedAt: nowTs,
+          comments: p.comments.map((c) =>
+            c.id === commentId
+              ? { ...c, updatedAt: nowTs, isPinned: !c.isPinned }
+              : c
+          ),
+        };
+      }),
+    }));
+  };
+
+  const handleToggleHideBuySellComment = (postId: string, commentId: string) => {
+    const nowTs = Date.now();
+    updateAndPersist((prev) => ({
+      ...prev,
+      buySellPosts: (prev.buySellPosts || []).map((p) => {
+        if (p.id !== postId) return p;
+        return {
+          ...p,
+          updatedAt: nowTs,
+          comments: p.comments.map((c) =>
+            c.id === commentId
+              ? { ...c, updatedAt: nowTs, isHidden: !c.isHidden }
+              : c
+          ),
+        };
+      }),
+    }));
+  };
+
+  // --- Stage 5: Admin Settings, Accounts, Stores, Categories & Ads Handlers ---
+  const handleUpdateSettings = (nextSettings: PlatformSettings) => {
+    updateAndPersist((prev) => ({
+      ...prev,
+      settings: {
+        ...nextSettings,
+        updatedAt: Date.now(),
+      },
+    }));
+  };
+
+  const handleUpdateUserAccount = (updatedUser: UserAccount) => {
+    const nowTs = Date.now();
+    const stampedUser: UserAccount = {
+      ...updatedUser,
+      updatedAt: updatedUser.updatedAt || nowTs,
+    };
+    updateAndPersist((prev) => {
+      const prevUser = prev.users.find((u) => u.id === stampedUser.id);
+      const oldUsernameNorm = prevUser
+        ? prevUser.username.trim().toLowerCase()
+        : '';
+      const newUsername = stampedUser.username.trim();
+      const usernameChanged =
+        Boolean(prevUser) &&
+        oldUsernameNorm !== newUsername.toLowerCase() &&
+        newUsername.length > 0;
+
+      let actionLabel = 'تعديل حساب';
+      if (prevUser && Boolean(prevUser.isBanned) !== Boolean(stampedUser.isBanned)) {
+        actionLabel = stampedUser.isBanned ? 'تعليق حساب' : 'إلغاء تعليق حساب';
+      } else if (prevUser && prevUser.role !== stampedUser.role) {
+        actionLabel =
+          stampedUser.role === 'moderator'
+            ? 'منح صلاحيات مشرف'
+            : 'إلغاء صلاحيات مشرف';
+      }
+
+      const renameAuthorInPosts = (posts: CommunityPostItem[]) =>
+        usernameChanged
+          ? posts.map((p) => {
+              const isAuthor =
+                p.authorId === stampedUser.id ||
+                p.authorUsername.trim().toLowerCase() === oldUsernameNorm;
+              const nextComments = (p.comments || []).map((c) => ({
+                ...c,
+                authorUsername:
+                  c.authorId === stampedUser.id ||
+                  c.authorUsername.trim().toLowerCase() === oldUsernameNorm
+                    ? newUsername
+                    : c.authorUsername,
+                replies: (c.replies || []).map((r) => ({
+                  ...r,
+                  authorUsername:
+                    r.authorId === stampedUser.id ||
+                    r.authorUsername.trim().toLowerCase() === oldUsernameNorm
+                      ? newUsername
+                      : r.authorUsername,
+                })),
+              }));
+              if (!isAuthor && nextComments === p.comments) return p;
+              return {
+                ...p,
+                authorUsername: isAuthor ? newUsername : p.authorUsername,
+                comments: nextComments,
+                updatedAt: nowTs,
+              };
+            })
+          : posts;
+
+      return {
+        ...prev,
+        users: prev.users.map((u) => (u.id === stampedUser.id ? stampedUser : u)),
+        communityPosts: renameAuthorInPosts(prev.communityPosts || []),
+        buySellPosts: renameAuthorInPosts(prev.buySellPosts || []),
+        utilityPosts: renameAuthorInPosts(prev.utilityPosts || []),
+        settings: appendAdminActivityLogToSettings(
+          prev.settings,
+          actionLabel,
+          stampedUser.username
+        ),
+      };
+    });
+    if (currentUser?.id === stampedUser.id) {
+      if (stampedUser.isBanned) {
+        setCurrentUser(null);
+        storageEngine.saveAuthenticatedUser(null, false);
+      } else {
+        setCurrentUser(stampedUser);
+        storageEngine.saveAuthenticatedUser(stampedUser, true);
+      }
+    }
+  };
+
+  const handleDeleteUserAccount = (id: string) => {
+    updateAndPersist((prev) => {
+      const target = prev.users.find((u) => u.id === id);
+      const delKeys: string[] = [id];
+      if (target) {
+        delKeys.push(`user:${target.username.trim().toLowerCase()}`);
+        if (target.accountName) {
+          delKeys.push(`acc:${target.accountName.trim().toLowerCase()}`);
+        }
+      }
+      return {
+        ...prev,
+        users: prev.users.filter((u) => u.id !== id),
+        deletedRecordIds: Array.from(
+          new Set([...(prev.deletedRecordIds || []), ...delKeys])
+        ),
+        settings: appendAdminActivityLogToSettings(
+          prev.settings,
+          'حذف حساب',
+          target?.username || id
+        ),
+      };
+    });
+    if (currentUser?.id === id) {
+      setCurrentUser(null);
+      storageEngine.saveAuthenticatedUser(null, false);
+    }
+  };
+
+  const handleRenameStoreCategory = (oldName: string, newName: string) => {
+    const nowTs = Date.now();
+    updateAndPersist((prev) => {
+      const baseSettings = appendAdminActivityLogToSettings(
+        prev.settings,
+        'تغيير مسمى قسم',
+        `${oldName} ← ${newName}`
+      );
+      return {
+        ...prev,
+        settings: {
+          ...baseSettings,
+          storeCategories: prev.settings.storeCategories.map((c) =>
+            c === oldName ? newName : c
+          ),
+          updatedAt: nowTs,
+        },
+        stores: prev.stores.map((s) =>
+          s.category === oldName
+            ? { ...s, category: newName, updatedAt: nowTs }
+            : s
+        ),
+      };
+    });
+  };
+
+  const handleAddTopBanner = (banner: TopBannerAd) => {
+    const nowTs = Date.now();
+    updateAndPersist((prev) => {
+      const existing = prev.topBanners.find((b) => b.id === banner.id);
+      const linkedStore = findLinkedStoreForAd(prev.stores, {
+        ...existing,
+        ...banner,
+      });
+      const unifiedViews = Math.max(
+        banner.viewsCount ?? existing?.viewsCount ?? 0,
+        linkedStore?.viewsCount || 0
+      );
+      const unifiedCalls = Math.max(
+        banner.callClicksCount ?? existing?.callClicksCount ?? 0,
+        linkedStore?.callClicksCount || 0
+      );
+      const unifiedWhatsapp = Math.max(
+        banner.whatsappClicksCount ?? existing?.whatsappClicksCount ?? 0,
+        linkedStore?.whatsappClicksCount || 0
+      );
+      const unifiedHours = mergeViewsByHourMaps(
+        banner.viewsByHour,
+        existing?.viewsByHour,
+        linkedStore?.viewsByHour
+      );
+      const mergedBanner: TopBannerAd = {
+        ...existing,
+        ...banner,
+        storeId: banner.storeId || existing?.storeId || linkedStore?.id,
+        viewsCount: unifiedViews,
+        baselineViewsAtCreation:
+          banner.baselineViewsAtCreation ??
+          existing?.baselineViewsAtCreation ??
+          (linkedStore?.viewsCount || 0),
+        adViewsSinceCreation:
+          banner.adViewsSinceCreation ?? existing?.adViewsSinceCreation ?? 0,
+        callClicksCount: unifiedCalls,
+        whatsappClicksCount: unifiedWhatsapp,
+        viewsByHour: unifiedHours,
+        updatedAt: nowTs,
+      };
+      const nextBanners = existing
+        ? prev.topBanners.map((b) => (b.id === banner.id ? mergedBanner : b))
+        : [mergedBanner, ...prev.topBanners];
+      return {
+        ...prev,
+        topBanners: nextBanners,
+        stores: linkedStore
+          ? prev.stores.map((s) =>
+              s.id === linkedStore.id
+                ? {
+                    ...s,
+                    viewsCount: unifiedViews,
+                    callClicksCount: unifiedCalls,
+                    whatsappClicksCount: unifiedWhatsapp,
+                    viewsByHour: unifiedHours,
+                    updatedAt: nowTs,
+                  }
+                : s
+            )
+          : prev.stores,
+        deletedRecordIds: (prev.deletedRecordIds || []).filter(
+          (id) => id !== banner.id
+        ),
+        settings: {
+          ...prev.settings,
+          updatedAt: nowTs,
+        },
+      };
+    });
+  };
+
+  const handleUpdateTopBanner = (banner: TopBannerAd) => {
+    const nowTs = Date.now();
+    updateAndPersist((prev) => {
+      const existing = prev.topBanners.find((b) => b.id === banner.id);
+      const linkedStore = findLinkedStoreForAd(prev.stores, {
+        ...existing,
+        ...banner,
+      });
+      const unifiedViews = Math.max(
+        banner.viewsCount ?? existing?.viewsCount ?? 0,
+        linkedStore?.viewsCount || 0
+      );
+      const unifiedCalls = Math.max(
+        banner.callClicksCount ?? existing?.callClicksCount ?? 0,
+        linkedStore?.callClicksCount || 0
+      );
+      const unifiedWhatsapp = Math.max(
+        banner.whatsappClicksCount ?? existing?.whatsappClicksCount ?? 0,
+        linkedStore?.whatsappClicksCount || 0
+      );
+      const unifiedHours = mergeViewsByHourMaps(
+        banner.viewsByHour,
+        existing?.viewsByHour,
+        linkedStore?.viewsByHour
+      );
+      const mergedBanner: TopBannerAd = {
+        ...existing,
+        ...banner,
+        storeId: banner.storeId || existing?.storeId || linkedStore?.id,
+        viewsCount: unifiedViews,
+        baselineViewsAtCreation:
+          banner.baselineViewsAtCreation ??
+          existing?.baselineViewsAtCreation ??
+          (linkedStore?.viewsCount || 0),
+        adViewsSinceCreation:
+          banner.adViewsSinceCreation ?? existing?.adViewsSinceCreation ?? 0,
+        callClicksCount: unifiedCalls,
+        whatsappClicksCount: unifiedWhatsapp,
+        viewsByHour: unifiedHours,
+        updatedAt: nowTs,
+      };
+      const nextBanners = existing
+        ? prev.topBanners.map((b) => (b.id === banner.id ? mergedBanner : b))
+        : [mergedBanner, ...prev.topBanners];
+      return {
+        ...prev,
+        topBanners: nextBanners,
+        stores: linkedStore
+          ? prev.stores.map((s) =>
+              s.id === linkedStore.id
+                ? {
+                    ...s,
+                    viewsCount: unifiedViews,
+                    callClicksCount: unifiedCalls,
+                    whatsappClicksCount: unifiedWhatsapp,
+                    viewsByHour: unifiedHours,
+                    updatedAt: nowTs,
+                  }
+                : s
+            )
+          : prev.stores,
+        deletedRecordIds: (prev.deletedRecordIds || []).filter(
+          (id) => id !== banner.id
+        ),
+        settings: {
+          ...prev.settings,
+          updatedAt: nowTs,
+        },
+      };
+    });
+  };
+
+  const handleDeleteTopBanner = (id: string) => {
+    updateAndPersist((prev) => ({
+      ...prev,
+      topBanners: prev.topBanners.filter((b) => b.id !== id),
+      deletedRecordIds: Array.from(
+        new Set([...(prev.deletedRecordIds || []), id])
+      ),
+      settings: {
+        ...prev.settings,
+        updatedAt: Date.now(),
+      },
+    }));
+  };
+
+  const handleAddSquareAd = (ad: SquareMovingAd) => {
+    const nowTs = Date.now();
+    updateAndPersist((prev) => {
+      const existing = prev.squareAds.find(
+        (s) => s.id === ad.id || (ad.storeId && s.storeId === ad.storeId)
+      );
+      const linkedStore = findLinkedStoreForAd(prev.stores, {
+        ...existing,
+        ...ad,
+      });
+      const unifiedViews = Math.max(
+        ad.viewsCount ?? existing?.viewsCount ?? 0,
+        linkedStore?.viewsCount || 0
+      );
+      const unifiedCalls = Math.max(
+        ad.callClicksCount ?? existing?.callClicksCount ?? 0,
+        linkedStore?.callClicksCount || 0
+      );
+      const unifiedWhatsapp = Math.max(
+        ad.whatsappClicksCount ?? existing?.whatsappClicksCount ?? 0,
+        linkedStore?.whatsappClicksCount || 0
+      );
+      const unifiedHours = mergeViewsByHourMaps(
+        ad.viewsByHour,
+        existing?.viewsByHour,
+        linkedStore?.viewsByHour
+      );
+      const mergedAd: SquareMovingAd = {
+        ...existing,
+        ...ad,
+        id: existing ? existing.id : ad.id,
+        storeId: ad.storeId || existing?.storeId || linkedStore?.id,
+        viewsCount: unifiedViews,
+        baselineViewsAtCreation:
+          ad.baselineViewsAtCreation ??
+          existing?.baselineViewsAtCreation ??
+          (linkedStore?.viewsCount || 0),
+        adViewsSinceCreation:
+          ad.adViewsSinceCreation ?? existing?.adViewsSinceCreation ?? 0,
+        callClicksCount: unifiedCalls,
+        whatsappClicksCount: unifiedWhatsapp,
+        viewsByHour: unifiedHours,
+        updatedAt: nowTs,
+      };
+      const nextSquareAds = existing
+        ? prev.squareAds.map((s) =>
+            s.id === ad.id || (ad.storeId && s.storeId === ad.storeId)
+              ? mergedAd
+              : s
+          )
+        : [mergedAd, ...prev.squareAds];
+      return {
+        ...prev,
+        squareAds: nextSquareAds,
+        deletedRecordIds: (prev.deletedRecordIds || []).filter(
+          (id) => id !== ad.id && id !== `sq-store-${ad.storeId || ''}`
+        ),
+        stores: prev.stores.map((s) =>
+          (linkedStore && s.id === linkedStore.id) ||
+          (ad.storeId && s.id === ad.storeId) ||
+          s.name.trim() === ad.title.trim()
+            ? {
+                ...s,
+                hiddenFromMarquee: false,
+                viewsCount: Math.max(s.viewsCount || 0, unifiedViews),
+                callClicksCount: Math.max(s.callClicksCount || 0, unifiedCalls),
+                whatsappClicksCount: Math.max(
+                  s.whatsappClicksCount || 0,
+                  unifiedWhatsapp
+                ),
+                viewsByHour: mergeViewsByHourMaps(s.viewsByHour, unifiedHours),
+                updatedAt: nowTs,
+              }
+            : s
+        ),
+        settings: {
+          ...prev.settings,
+          updatedAt: nowTs,
+        },
+      };
+    });
+  };
+
+  const handleUpdateSquareAd = (ad: SquareMovingAd) => {
+    const nowTs = Date.now();
+    updateAndPersist((prev) => {
+      const existing = prev.squareAds.find((s) => s.id === ad.id);
+      const linkedStore = findLinkedStoreForAd(prev.stores, {
+        ...existing,
+        ...ad,
+      });
+      const unifiedViews = Math.max(
+        ad.viewsCount ?? existing?.viewsCount ?? 0,
+        linkedStore?.viewsCount || 0
+      );
+      const unifiedCalls = Math.max(
+        ad.callClicksCount ?? existing?.callClicksCount ?? 0,
+        linkedStore?.callClicksCount || 0
+      );
+      const unifiedWhatsapp = Math.max(
+        ad.whatsappClicksCount ?? existing?.whatsappClicksCount ?? 0,
+        linkedStore?.whatsappClicksCount || 0
+      );
+      const unifiedHours = mergeViewsByHourMaps(
+        ad.viewsByHour,
+        existing?.viewsByHour,
+        linkedStore?.viewsByHour
+      );
+      const mergedAd: SquareMovingAd = {
+        ...existing,
+        ...ad,
+        storeId: ad.storeId || existing?.storeId || linkedStore?.id,
+        viewsCount: unifiedViews,
+        baselineViewsAtCreation:
+          ad.baselineViewsAtCreation ??
+          existing?.baselineViewsAtCreation ??
+          (linkedStore?.viewsCount || 0),
+        adViewsSinceCreation:
+          ad.adViewsSinceCreation ?? existing?.adViewsSinceCreation ?? 0,
+        callClicksCount: unifiedCalls,
+        whatsappClicksCount: unifiedWhatsapp,
+        viewsByHour: unifiedHours,
+        updatedAt: nowTs,
+      };
+      const nextSquareAds = existing
+        ? prev.squareAds.map((s) => (s.id === ad.id ? mergedAd : s))
+        : [mergedAd, ...prev.squareAds];
+      return {
+        ...prev,
+        squareAds: nextSquareAds,
+        deletedRecordIds: (prev.deletedRecordIds || []).filter(
+          (id) => id !== ad.id && id !== `sq-store-${ad.storeId || ''}`
+        ),
+        stores: prev.stores.map((s) =>
+          (linkedStore && s.id === linkedStore.id) ||
+          (ad.storeId && s.id === ad.storeId) ||
+          s.name.trim() === ad.title.trim()
+            ? {
+                ...s,
+                hiddenFromMarquee: false,
+                viewsCount: Math.max(s.viewsCount || 0, unifiedViews),
+                callClicksCount: Math.max(s.callClicksCount || 0, unifiedCalls),
+                whatsappClicksCount: Math.max(
+                  s.whatsappClicksCount || 0,
+                  unifiedWhatsapp
+                ),
+                viewsByHour: mergeViewsByHourMaps(s.viewsByHour, unifiedHours),
+                updatedAt: nowTs,
+              }
+            : s
+        ),
+        settings: {
+          ...prev.settings,
+          updatedAt: nowTs,
+        },
+      };
+    });
+  };
+
+  const handleTogglePinSquareAd = (id: string) => {
+    const nowTs = Date.now();
+    updateAndPersist((prev) => ({
+      ...prev,
+      squareAds: prev.squareAds.map((ad) =>
+        ad.id === id
+          ? { ...ad, isAdminPinned: !ad.isAdminPinned, updatedAt: nowTs }
+          : ad
+      ),
+      settings: {
+        ...prev.settings,
+        updatedAt: nowTs,
+      },
+    }));
+  };
+
+  const handleDeleteSquareAd = (id: string) => {
+    updateAndPersist((prev) => ({
+      ...prev,
+      squareAds: prev.squareAds.filter((ad) => ad.id !== id),
+      deletedRecordIds: Array.from(
+        new Set([...(prev.deletedRecordIds || []), id])
+      ),
+      settings: {
+        ...prev.settings,
+        updatedAt: Date.now(),
+      },
+    }));
+  };
+
+  const handleUpdatePopupAd = (popup: PopupAdConfig) => {
+    const nowTs = Date.now();
+    updateAndPersist((prev) => {
+      const linkedStore = findLinkedStoreForAd(prev.stores, {
+        ...prev.popupAd,
+        ...popup,
+      });
+      // Reset popup counters only if title changed to a completely different store/place
+      const samePopupTarget =
+        (prev.popupAd.title || '').trim().toLowerCase() ===
+        (popup.title || '').trim().toLowerCase();
+      const basePopupViews = samePopupTarget
+        ? popup.viewsCount ?? prev.popupAd.viewsCount ?? 0
+        : popup.viewsCount ?? 0;
+      const basePopupCalls = samePopupTarget
+        ? popup.callClicksCount ?? prev.popupAd.callClicksCount ?? 0
+        : popup.callClicksCount ?? 0;
+      const basePopupWhatsapp = samePopupTarget
+        ? popup.whatsappClicksCount ?? prev.popupAd.whatsappClicksCount ?? 0
+        : popup.whatsappClicksCount ?? 0;
+      const unifiedViews = Math.max(basePopupViews, linkedStore?.viewsCount || 0);
+      const unifiedCalls = Math.max(
+        basePopupCalls,
+        linkedStore?.callClicksCount || 0
+      );
+      const unifiedWhatsapp = Math.max(
+        basePopupWhatsapp,
+        linkedStore?.whatsappClicksCount || 0
+      );
+      const unifiedHours = mergeViewsByHourMaps(
+        popup.viewsByHour,
+        samePopupTarget ? prev.popupAd.viewsByHour : undefined,
+        linkedStore?.viewsByHour
+      );
+
+      return {
+        ...prev,
+        popupAd: {
+          ...prev.popupAd,
+          ...popup,
+          storeId: popup.storeId || linkedStore?.id,
+          viewsCount: unifiedViews,
+          baselineViewsAtCreation: samePopupTarget
+            ? popup.baselineViewsAtCreation ??
+              prev.popupAd.baselineViewsAtCreation ??
+              (linkedStore?.viewsCount || 0)
+            : popup.baselineViewsAtCreation ?? (linkedStore?.viewsCount || 0),
+          adViewsSinceCreation: samePopupTarget
+            ? popup.adViewsSinceCreation ?? prev.popupAd.adViewsSinceCreation ?? 0
+            : popup.adViewsSinceCreation ?? 0,
+          callClicksCount: unifiedCalls,
+          whatsappClicksCount: unifiedWhatsapp,
+          viewsByHour: unifiedHours,
+          updatedAt: nowTs,
+        },
+        stores: linkedStore
+          ? prev.stores.map((s) =>
+              s.id === linkedStore.id
+                ? {
+                    ...s,
+                    viewsCount: unifiedViews,
+                    callClicksCount: unifiedCalls,
+                    whatsappClicksCount: unifiedWhatsapp,
+                    viewsByHour: unifiedHours,
+                    updatedAt: nowTs,
+                  }
+                : s
+            )
+          : prev.stores,
+        settings: {
+          ...prev.settings,
+          updatedAt: nowTs,
+        },
+      };
+    });
+  };
+
+  const handleTrackAdInteraction = (
+    adType: 'top_banner' | 'square_ad' | 'popup_ad',
+    adId: string,
+    metric: 'view' | 'call' | 'whatsapp'
+  ) => {
+    const nowTs = Date.now();
+    const hourKey = String(new Date().getHours());
+    updateAndPersist((prev) => {
+      // 1. Identify the clicked ad
+      const clickedBanner =
+        adType === 'top_banner'
+          ? prev.topBanners.find((b) => b.id === adId)
+          : undefined;
+      const clickedPopup = adType === 'popup_ad' ? prev.popupAd : undefined;
+      const clickedSquare =
+        adType === 'square_ad'
+          ? prev.squareAds.find((a) => a.id === adId)
+          : undefined;
+      const virtualStoreId =
+        adType === 'square_ad' && adId.startsWith('store-sq-')
+          ? adId.slice('store-sq-'.length)
+          : undefined;
+
+      const targetAdObj = clickedBanner || clickedPopup || clickedSquare;
+      const linkedStore = virtualStoreId
+        ? prev.stores.find((s) => s.id === virtualStoreId)
+        : findLinkedStoreForAd(prev.stores, targetAdObj);
+
+      // 2. Gather all ads linked to this store (if a store is linked) so their counters stay 100% identical
+      const linkedSquares = linkedStore
+        ? prev.squareAds.filter(
+            (a) => a.id === adId || isAdLinkedToStore(a, linkedStore)
+          )
+        : clickedSquare
+        ? [clickedSquare]
+        : [];
+      const linkedBanners = linkedStore
+        ? prev.topBanners.filter(
+            (b) => b.id === adId || isAdLinkedToStore(b, linkedStore)
+          )
+        : clickedBanner
+        ? [clickedBanner]
+        : [];
+      const popupIsLinked =
+        adType === 'popup_ad' ||
+        (linkedStore ? isAdLinkedToStore(prev.popupAd, linkedStore) : false);
+
+      // 3. Compute the unified base numbers across the ad(s) and the store in Sections
+      const baseViews = Math.max(
+        targetAdObj?.viewsCount || 0,
+        linkedStore?.viewsCount || 0,
+        ...linkedSquares.map((a) => a.viewsCount || 0),
+        ...linkedBanners.map((b) => b.viewsCount || 0),
+        popupIsLinked ? prev.popupAd.viewsCount || 0 : 0
+      );
+      const baseCalls = Math.max(
+        targetAdObj?.callClicksCount || 0,
+        linkedStore?.callClicksCount || 0,
+        ...linkedSquares.map((a) => a.callClicksCount || 0),
+        ...linkedBanners.map((b) => b.callClicksCount || 0),
+        popupIsLinked ? prev.popupAd.callClicksCount || 0 : 0
+      );
+      const baseWhatsapp = Math.max(
+        targetAdObj?.whatsappClicksCount || 0,
+        linkedStore?.whatsappClicksCount || 0,
+        ...linkedSquares.map((a) => a.whatsappClicksCount || 0),
+        ...linkedBanners.map((b) => b.whatsappClicksCount || 0),
+        popupIsLinked ? prev.popupAd.whatsappClicksCount || 0 : 0
+      );
+      const mergedHours = mergeViewsByHourMaps(
+        targetAdObj?.viewsByHour,
+        linkedStore?.viewsByHour,
+        ...linkedSquares.map((a) => a.viewsByHour),
+        ...linkedBanners.map((b) => b.viewsByHour),
+        popupIsLinked ? prev.popupAd.viewsByHour : undefined
+      );
+
+      // 4. Increment the triggered metric simultaneously for both the Ad and the Store in Sections
+      const nextViews = metric === 'view' ? baseViews + 1 : baseViews;
+      const nextCalls = metric === 'call' ? baseCalls + 1 : baseCalls;
+      const nextWhatsapp =
+        metric === 'whatsapp' ? baseWhatsapp + 1 : baseWhatsapp;
+      const nextHours =
+        metric === 'view'
+          ? { ...mergedHours, [hourKey]: (mergedHours[hourKey] || 0) + 1 }
+          : mergedHours;
+
+      return {
+        ...prev,
+        topBanners: prev.topBanners.map((b) => {
+          const shouldUpdate =
+            (adType === 'top_banner' && b.id === adId) ||
+            (linkedStore && isAdLinkedToStore(b, linkedStore));
+          if (!shouldUpdate) return b;
+          return {
+            ...b,
+            storeId: b.storeId || linkedStore?.id,
+            viewsCount: nextViews,
+            adViewsSinceCreation:
+              metric === 'view'
+                ? (b.adViewsSinceCreation || 0) + 1
+                : b.adViewsSinceCreation || 0,
+            callClicksCount: nextCalls,
+            whatsappClicksCount: nextWhatsapp,
+            viewsByHour: nextHours,
+            updatedAt: nowTs,
+          };
+        }),
+        squareAds: prev.squareAds.map((a) => {
+          const shouldUpdate =
+            (adType === 'square_ad' && a.id === adId) ||
+            (linkedStore && isAdLinkedToStore(a, linkedStore));
+          if (!shouldUpdate) return a;
+          return {
+            ...a,
+            storeId: a.storeId || linkedStore?.id,
+            viewsCount: nextViews,
+            adViewsSinceCreation:
+              metric === 'view'
+                ? (a.adViewsSinceCreation || 0) + 1
+                : a.adViewsSinceCreation || 0,
+            callClicksCount: nextCalls,
+            whatsappClicksCount: nextWhatsapp,
+            viewsByHour: nextHours,
+            updatedAt: nowTs,
+          };
+        }),
+        popupAd: popupIsLinked
+          ? {
+              ...prev.popupAd,
+              storeId: prev.popupAd.storeId || linkedStore?.id,
+              viewsCount: nextViews,
+              adViewsSinceCreation:
+                metric === 'view'
+                  ? (prev.popupAd.adViewsSinceCreation || 0) + 1
+                  : prev.popupAd.adViewsSinceCreation || 0,
+              callClicksCount: nextCalls,
+              whatsappClicksCount: nextWhatsapp,
+              viewsByHour: nextHours,
+              updatedAt: nowTs,
+            }
+          : prev.popupAd,
+        stores: linkedStore
+          ? prev.stores.map((s) => {
+              if (s.id !== linkedStore.id) return s;
+              return {
+                ...s,
+                viewsCount: nextViews,
+                callClicksCount: nextCalls,
+                whatsappClicksCount: nextWhatsapp,
+                viewsByHour: nextHours,
+                updatedAt: nowTs,
+              };
+            })
+          : prev.stores,
+      };
+    });
+  };
+
+  const handleMarkMessageRead = (id: string) => {
+    updateAndPersist((prev) => ({
+      ...prev,
+      messages: prev.messages.map((m) =>
+        m.id === id ? { ...m, isRead: true } : m
+      ),
+    }));
+  };
+
+  const handleDeleteMessage = (id: string) => {
+    updateAndPersist((prev) => ({
+      ...prev,
+      messages: prev.messages.filter((m) => m.id !== id),
+      deletedRecordIds: Array.from(
+        new Set([...(prev.deletedRecordIds || []), id])
+      ),
+    }));
+  };
+
+  // Check if the logged-in user is a driver whose request was just accepted ("تم القبول")
+  const pendingDriverWelcome = currentUser
+    ? dbState.tawsilaRides.find(
+        (r) =>
+          r.acceptanceNotificationPending &&
+          (r.driverId === currentUser.id ||
+            r.driverName.trim().toLowerCase() ===
+              currentUser.username.trim().toLowerCase() ||
+            (currentUser.phone && r.phone === currentUser.phone))
+      )
+    : undefined;
+
+  const handleDismissDriverWelcome = () => {
+    if (!pendingDriverWelcome) return;
+    updateAndPersist((prev) => ({
+      ...prev,
+      tawsilaRides: prev.tawsilaRides.map((r) =>
+        r.id === pendingDriverWelcome.id
+          ? { ...r, acceptanceNotificationPending: false }
+          : r
+      ),
+    }));
+  };
+
+  const isAdmin = currentUser?.role === 'admin';
+  const unreadMessagesCount = dbState.messages.filter((m) => !m.isRead).length;
+
+  const sidebarItems: Array<{
+    id: MainSectionId;
+    number: string;
+    label: string;
+    subtitle: string;
+    icon: React.FC<{ className?: string }>;
+    adminOnly?: boolean;
+    badge?: number;
+  }> = [
+    {
+      id: 'directory',
+      number: '1',
+      label: 'دليل المحلات',
+      subtitle: 'دليل المحلات والأنشطة التجارية',
+      icon: Store,
+    },
+    {
+      id: 'services_numbers',
+      number: '2',
+      label: 'أرقام الخدمات',
+      subtitle: 'الطوارئ والفنيين والمهنيين',
+      icon: PhoneCall,
+    },
+    {
+      id: 'tawsila',
+      number: '3',
+      label: 'توصيلة',
+      subtitle: 'مشاوير، سيارات، ونقل بضائع',
+      icon: Car,
+    },
+    {
+      id: 'community',
+      number: '4',
+      label: 'مجتمع',
+      subtitle: 'منشورات ونقاشات الأهالي',
+      icon: Users,
+    },
+    {
+      id: 'utilities',
+      number: '5',
+      label: 'تقديمات المرافق',
+      subtitle: 'المياه والكهرباء والغاز والمنشورات',
+      icon: FileText,
+    },
+    {
+      id: 'buy_sell',
+      number: '6',
+      label: 'بيع واشتري',
+      subtitle: 'بيع وشراء مباشر بين الأهالي',
+      icon: ShoppingBag,
+    },
+    {
+      id: 'settings',
+      number: '7',
+      label: 'الإعدادات',
+      subtitle: 'لوحة الـ Admin والتخزين والمراسلات',
+      icon: Settings,
+      adminOnly: true,
+      badge: unreadMessagesCount > 0 ? unreadMessagesCount : undefined,
+    },
+  ];
+
+  const visibleSidebarItems = sidebarItems.filter(
+    (item) => !item.adminOnly || isAdmin
+  );
+
+  const unreadPrivateMessagesCount = currentUser
+    ? (dbState.privateChatMessages || []).filter(
+        (m) =>
+          !m.isRead &&
+          (m.receiverId === currentUser.id ||
+            m.receiverUsername.trim().toLowerCase() ===
+              currentUser.username.trim().toLowerCase())
+      ).length
+    : 0;
+
+  return (
+    <div className="min-h-screen w-full max-w-[100vw] overflow-x-hidden bg-[#0A192F] text-[#F8FAFC] flex flex-col pb-16">
+      {/* PWA Instant Auto-Update Toast Notification */}
+      {(needRefresh || pwaUpdateToast) && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[150] w-[92vw] max-w-md px-4 py-3 rounded-2xl bg-[#112240]/95 border-2 border-sky-400 text-sky-100 shadow-[0_12px_35px_rgba(56,189,248,0.45)] flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <RefreshCw className="w-5 h-5 text-sky-400 animate-spin shrink-0" />
+            <span className="text-xs sm:text-sm font-extrabold text-[#F8FAFC] leading-relaxed">
+              {pwaUpdateToast || 'تم إطلاق تحديث جديد للموقع، جاري التحديث...'}
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              updateServiceWorker(true).catch(() => {});
+              window.location.reload();
+            }}
+            className="px-2.5 py-1 rounded-lg bg-sky-500 hover:bg-sky-400 text-[#0A192F] text-xs font-extrabold shrink-0 cursor-pointer"
+          >
+            تحديث الآن
+          </button>
+        </div>
+      )}
+
+      {/* Login Welcome Notification Toast (مرحباً بك + اسم صاحب الحساب) */}
+      {loginWelcomeToast && (
+        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[120] px-5 py-3 rounded-2xl bg-[#112240] border-2 border-emerald-400 text-emerald-200 shadow-[0_12px_35px_rgba(16,185,129,0.35)] flex items-center gap-3 animate-bounce">
+          <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
+          <span className="text-sm sm:text-base font-extrabold text-[#F8FAFC]">
+            {loginWelcomeToast}
+          </span>
+          <button
+            type="button"
+            onClick={() => setLoginWelcomeToast('')}
+            className="text-xs text-emerald-300 hover:text-white underline mr-2 cursor-pointer"
+          >
+            إغلاق
+          </button>
+        </div>
+      )}
+
+      {/* Cloud Write Error Toast (منع الفشل الصامت عند الحفظ في Firebase) */}
+      {cloudWriteErrorToast && (
+        <div className="fixed top-24 left-1/2 -translate-x-1/2 z-[130] w-[92vw] max-w-xl px-5 py-3.5 rounded-2xl bg-rose-950/95 border-2 border-rose-400 text-rose-100 shadow-[0_12px_35px_rgba(244,63,94,0.45)] flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <X className="w-5 h-5 text-rose-400 shrink-0" />
+            <span className="text-xs sm:text-sm font-extrabold text-white leading-relaxed">
+              {cloudWriteErrorToast}
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setCloudWriteErrorToast('')}
+            className="px-2.5 py-1 rounded-lg bg-rose-800/80 hover:bg-rose-700 text-xs font-extrabold text-white shrink-0 cursor-pointer"
+          >
+            إغلاق
+          </button>
+        </div>
+      )}
+
+      {/* Header + Marquee + Live Clock + Auth + Crown 👑 Ad Packages + Bell 🔔 */}
+      <HeaderAndAdPackages
+        settings={dbState.settings}
+        currentUser={currentUser}
+        visitorId={visitorId}
+        messages={dbState.messages}
+        onMarkUserMessagesRead={handleMarkUserMessagesRead}
+        onReplyToAdminMessage={handleUserReplyToAdminMessage}
+        onNavigateToMention={handleNavigateToMention}
+        onRespondFriendRequest={handleRespondFriendRequest}
+        onOpenUserProfile={handleSelectUserProfile}
+        onOpenAuthModal={() => setIsAuthModalOpen(true)}
+        onLogout={handleLogout}
+        onOpenMobileSidebar={() => setMobileSidebarOpen(true)}
+      />
+
+      {/* Main Content Layout: Desktop Persistent Right Sidebar (RTL) + Main Viewport */}
+      <div className="flex-1 flex w-full max-w-[1600px] mx-auto overflow-x-hidden">
+        {/* Desktop Sidebar: Always open on the Right (RTL), glowing Reveal Highlight borders */}
+        <aside className="hidden lg:flex flex-col w-72 shrink-0 bg-[#112240]/85 border-l border-[#334155] p-4 justify-start">
+          <div className="space-y-2">
+            <div className="px-3 py-2 text-xs font-extrabold text-sky-400 border-b border-[#334155]/80 mb-2">
+              أقسام المنصة الرئيسية
+            </div>
+
+            {visibleSidebarItems.map((item) => {
+              const Icon = item.icon;
+              const isSelected = activeSection === item.id;
+              const isItemDisabled = Boolean(
+                dbState.settings.disabledSections?.[item.id]
+              );
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => setActiveSection(item.id)}
+                  className={`fluent-reveal w-full text-right p-3.5 rounded-xl border transition-all flex items-center justify-between gap-3 cursor-pointer ${
+                    isSelected
+                      ? 'bg-sky-600/25 border-sky-400 text-[#F8FAFC] shadow-[0_0_18px_-4px_rgba(56,189,248,0.4)]'
+                      : 'bg-[#0A192F]/85 border-[#334155]/80 text-[#94A3B8] hover:text-[#F8FAFC] hover:bg-[#1E293B]'
+                  }`}
+                >
+                  <div className="flex items-center gap-3 min-w-0 relative z-10">
+                    <div
+                      className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 border ${
+                        isSelected
+                          ? 'bg-sky-500 text-[#0A192F] border-sky-300 font-bold'
+                          : 'bg-[#1E293B] text-sky-400 border-[#334155]'
+                      }`}
+                    >
+                      {isItemDisabled ? (
+                        <Settings className="w-5 h-5 text-amber-400 animate-spin" />
+                      ) : (
+                        <Icon className="w-5 h-5" />
+                      )}
+                    </div>
+                    <div className="min-w-0">
+                      <div className="text-sm font-extrabold truncate flex items-center gap-1.5">
+                        <span>
+                          {item.number}. {item.label}
+                        </span>
+                        {isItemDisabled && (
+                          <Settings className="w-3.5 h-3.5 text-amber-400 animate-spin shrink-0" />
+                        )}
+                      </div>
+                      <div className="text-[11px] text-[#94A3B8] truncate">
+                        {isItemDisabled
+                          ? 'معطل (في وضع الصيانة للمستخدمين)'
+                          : item.subtitle}
+                      </div>
+                    </div>
+                  </div>
+
+                  {item.badge !== undefined && (
+                    <span className="relative z-10 px-2 py-0.5 rounded-full bg-rose-600 text-white text-xs font-mono-tabular font-bold">
+                      {item.badge}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+
+            {/* تبديل المظهر الليلي / المظهر النهاري في القائمة الجانبية */}
+            <div className="pt-2 border-t border-[#334155]">
+              <div className="p-2.5 rounded-xl bg-[#0A192F]/95 border border-sky-400/40 space-y-1.5">
+                <div className="text-[11px] font-extrabold text-sky-400 px-1">
+                  مظهر التطبيق:
+                </div>
+                <div className="grid grid-cols-2 gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setThemeMode('dark')}
+                    className={`fluent-reveal px-2.5 py-2 rounded-lg border text-xs font-extrabold flex items-center justify-center gap-1.5 cursor-pointer transition-all ${
+                      themeMode === 'dark'
+                        ? 'bg-sky-600 text-white border-sky-300 shadow'
+                        : 'bg-[#112240] text-[#94A3B8] border-[#334155]'
+                    }`}
+                  >
+                    <Moon className="w-3.5 h-3.5 shrink-0" />
+                    <span>المظهر الليلي</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setThemeMode('light')}
+                    className={`fluent-reveal px-2.5 py-2 rounded-lg border text-xs font-extrabold flex items-center justify-center gap-1.5 cursor-pointer transition-all ${
+                      themeMode === 'light'
+                        ? 'bg-amber-500 text-black border-amber-400 shadow'
+                        : 'bg-[#112240] text-[#94A3B8] border-[#334155]'
+                    }`}
+                  >
+                    <Sun className="w-3.5 h-3.5 shrink-0" />
+                    <span>المظهر النهاري</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* بوكس عدد المتصلين الآن يظهر دائماً مباشرة بعد آخر خيار في القائمة الجانبية ولا ينزل لأسفل الصفحة الطويلة */}
+            <div className="pt-2 border-t border-[#334155]">
+              <div className="fluent-reveal p-3.5 rounded-xl bg-[#0A192F]/95 border border-emerald-500/40 space-y-2">
+                <div className="flex items-center justify-between gap-2 relative z-10">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_#34d399]" />
+                    <Radio className="w-4 h-4 text-emerald-400" />
+                    <span className="text-xs font-extrabold text-[#F8FAFC]">
+                      عدد المتصلين الآن
+                    </span>
+                  </div>
+                  <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-400/50 text-emerald-300 text-xs font-mono-tabular font-extrabold">
+                    {effectiveOnlineCount}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 pt-1.5 border-t border-[#334155]/80 text-[11px] relative z-10">
+                  <div className="p-2 rounded-lg bg-[#112240]/90 border border-sky-400/30 flex items-center justify-between">
+                    <span className="text-[#94A3B8] font-bold">المتصلين المسجلين:</span>
+                    <strong className="text-sky-300 font-mono-tabular font-extrabold">
+                      {onlineStats.registeredCount}
+                    </strong>
+                  </div>
+                  <div className="p-2 rounded-lg bg-[#112240]/90 border border-amber-400/30 flex items-center justify-between">
+                    <span className="text-[#94A3B8] font-bold">عدد الزائرين:</span>
+                    <strong className="text-amber-300 font-mono-tabular font-extrabold">
+                      {onlineStats.guestsCount}
+                    </strong>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </aside>
+
+        {/* Mobile Sliding Sidebar Drawer: Closes automatically when tapping any empty backdrop area */}
+        {mobileSidebarOpen && (
+          <div
+            className="fixed inset-0 z-50 lg:hidden bg-[#0A192F]/80 backdrop-blur-sm flex"
+            onClick={(e) => {
+              if (e.target === e.currentTarget) {
+                setMobileSidebarOpen(false);
+              }
+            }}
+          >
+            <div className="w-72 max-w-[84vw] h-full bg-[#112240] border-l border-sky-400/40 p-4 flex flex-col justify-start overflow-y-auto shadow-2xl">
+              <div className="space-y-3">
+                <div className="flex items-center justify-between pb-3 border-b border-[#334155]">
+                  <div>
+                    <div className="text-sm font-extrabold text-[#F8FAFC]">
+                      القائمة الجانبية
+                    </div>
+                    <div className="text-[11px] text-[#94A3B8]">
+                      اضغط في أي مكان فارغ للإغلاق
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setMobileSidebarOpen(false)}
+                    aria-label="إغلاق القائمة"
+                    className="fluent-reveal w-10 h-10 rounded-lg bg-[#1E293B] hover:bg-rose-600 text-white border border-[#334155] flex items-center justify-center cursor-pointer"
+                  >
+                    <X className="w-5 h-5 relative z-10" />
+                  </button>
+                </div>
+
+                <div className="space-y-2">
+                  {visibleSidebarItems.map((item) => {
+                    const Icon = item.icon;
+                    const isSelected = activeSection === item.id;
+                    const isItemDisabled = Boolean(
+                      dbState.settings.disabledSections?.[item.id]
+                    );
+                    return (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => {
+                          setActiveSection(item.id);
+                          setMobileSidebarOpen(false);
+                        }}
+                        className={`fluent-reveal w-full text-right p-3.5 rounded-xl border flex items-center justify-between gap-2 cursor-pointer ${
+                          isSelected
+                            ? 'bg-sky-600/25 border-sky-400 text-[#F8FAFC]'
+                            : 'bg-[#0A192F]/90 border-[#334155] text-[#94A3B8]'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3 relative z-10">
+                          {isItemDisabled ? (
+                            <Settings className="w-5 h-5 text-amber-400 animate-spin shrink-0" />
+                          ) : (
+                            <Icon className="w-5 h-5 text-sky-400 shrink-0" />
+                          )}
+                          <div>
+                            <div className="text-sm font-extrabold text-[#F8FAFC] flex items-center gap-1.5">
+                              <span>
+                                {item.number}. {item.label}
+                              </span>
+                              {isItemDisabled && (
+                                <Settings className="w-3.5 h-3.5 text-amber-400 animate-spin shrink-0" />
+                              )}
+                            </div>
+                            <div className="text-[11px] text-[#94A3B8]">
+                              {isItemDisabled
+                                ? 'معطل (في وضع الصيانة للمستخدمين)'
+                                : item.subtitle}
+                            </div>
+                          </div>
+                        </div>
+                        {item.badge !== undefined && (
+                          <span className="relative z-10 px-2 py-0.5 rounded-full bg-rose-600 text-white text-xs font-bold">
+                            {item.badge}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+
+                  {/* تبديل المظهر الليلي / المظهر النهاري في القائمة الجانبية للهاتف */}
+                  <div className="pt-1.5 border-t border-[#334155]">
+                    <div className="p-2 rounded-xl bg-[#0A192F] border border-sky-400/40 space-y-1.5">
+                      <div className="text-[10.5px] font-extrabold text-sky-400 px-1">
+                        مظهر التطبيق:
+                      </div>
+                      <div className="grid grid-cols-2 gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => setThemeMode('dark')}
+                          className={`fluent-reveal px-2 py-1.5 rounded-lg border text-[11px] font-extrabold flex items-center justify-center gap-1 cursor-pointer transition-all ${
+                            themeMode === 'dark'
+                              ? 'bg-sky-600 text-white border-sky-300 shadow'
+                              : 'bg-[#112240] text-[#94A3B8] border-[#334155]'
+                          }`}
+                        >
+                          <Moon className="w-3.5 h-3.5 shrink-0" />
+                          <span>المظهر الليلي</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setThemeMode('light')}
+                          className={`fluent-reveal px-2 py-1.5 rounded-lg border text-[11px] font-extrabold flex items-center justify-center gap-1 cursor-pointer transition-all ${
+                            themeMode === 'light'
+                              ? 'bg-amber-500 text-black border-amber-400 shadow'
+                              : 'bg-[#112240] text-[#94A3B8] border-[#334155]'
+                          }`}
+                        >
+                          <Sun className="w-3.5 h-3.5 shrink-0" />
+                          <span>المظهر النهاري</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* بوكس عدد المتصلين الآن بحجم مناسب لجميع المستخدمين وأسفله مع تحيات المطور Amir Lamay */}
+                  <div className="pt-1.5 border-t border-[#334155] text-xs text-[#94A3B8] space-y-1.5">
+                    <div className="p-2.5 rounded-xl bg-[#0A192F] border border-emerald-500/40 space-y-1.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                          <Radio className="w-3.5 h-3.5 text-emerald-400" />
+                          <span className="text-[11px] font-extrabold text-[#F8FAFC]">
+                            عدد المتصلين الآن
+                          </span>
+                        </div>
+                        <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-400/50 text-emerald-300 text-[11px] font-mono-tabular font-extrabold">
+                          {effectiveOnlineCount}
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-1.5 pt-1 border-t border-[#334155]/80 text-[10px]">
+                        <div className="px-2 py-1 rounded-lg bg-[#112240] border border-sky-400/30 flex items-center justify-between">
+                          <span className="text-[#94A3B8] font-bold">المسجلين:</span>
+                          <strong className="text-sky-300 font-mono-tabular font-extrabold">
+                            {onlineStats.registeredCount}
+                          </strong>
+                        </div>
+                        <div className="px-2 py-1 rounded-lg bg-[#112240] border border-amber-400/30 flex items-center justify-between">
+                          <span className="text-[#94A3B8] font-bold">الزائرين:</span>
+                          <strong className="text-amber-300 font-mono-tabular font-extrabold">
+                            {onlineStats.guestsCount}
+                          </strong>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="text-center pt-0.5">
+                      <span className="inline-block text-[11px] font-extrabold text-sky-400 tracking-wide select-all">
+                        مع تحيات المطور Amir Lamay
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Center Main Content Area */}
+        <main className="flex-1 min-w-0 p-3 sm:p-6 space-y-6 overflow-x-hidden">
+          <TopBannersAndSquareAds
+            topBanners={dbState.topBanners}
+            squareAds={dbState.squareAds}
+            stores={dbState.stores}
+            popupAd={dbState.popupAd}
+            isAdmin={isAdmin}
+            showBannersAndSquareAds={
+              activeSection === 'directory' ||
+              activeSection === 'community' ||
+              activeSection === 'buy_sell'
+            }
+            onNavigateSection={setActiveSection}
+            onTrackAdInteraction={handleTrackAdInteraction}
+            onBulkDeleteAds={(squareAdIds, topBannerIds, storeIds) => {
+              const sqSet = new Set(squareAdIds);
+              const tbSet = new Set(topBannerIds);
+              const stSet = new Set(storeIds);
+              updateAndPersist((prev) => {
+                const deletedSqAds = prev.squareAds.filter((a) => sqSet.has(a.id));
+                const deletedSqTitles = new Set(
+                  deletedSqAds.map((a) => a.title.trim())
+                );
+                const deletedSqStoreIds = new Set(
+                  deletedSqAds
+                    .map((a) => a.storeId)
+                    .filter((id): id is string => Boolean(id))
+                );
+                return {
+                  ...prev,
+                  squareAds: prev.squareAds.filter((a) => !sqSet.has(a.id)),
+                  topBanners: prev.topBanners.filter((b) => !tbSet.has(b.id)),
+                  // لا يتم حذف المحل من القوائم إطلاقاً؛ يختفي فقط من اللوحة المتحركة
+                  stores: prev.stores.map((s) =>
+                    stSet.has(s.id) ||
+                    deletedSqStoreIds.has(s.id) ||
+                    deletedSqTitles.has(s.name.trim())
+                      ? { ...s, hiddenFromMarquee: true, featuredInMarquee: false }
+                      : s
+                  ),
+                  deletedRecordIds: Array.from(
+                    new Set([
+                      ...(prev.deletedRecordIds || []),
+                      ...squareAdIds,
+                      ...topBannerIds,
+                    ])
+                  ),
+                };
+              });
+            }}
+            onEntryPopupClosed={() => {
+              if (!currentUser) {
+                setIsAuthModalOpen(true);
+              }
+            }}
+          />
+
+          <SectionErrorBoundary sectionName={`PortalSectionsWorkspace:${activeSection}`}>
+            <PortalSectionsWorkspace
+              activeSection={activeSection}
+              state={dbState}
+              currentUser={currentUser}
+            onlineCount={effectiveOnlineCount}
+            onlineStats={onlineStats}
+            connStatus={connStatus}
+            connMessage={connMessage}
+            onOpenAuthModal={() => setIsAuthModalOpen(true)}
+            onAddStore={handleAddStore}
+            onUpdateStore={handleUpdateStore}
+            onGeneralizeStoreImageStyle={handleGeneralizeStoreImageStyle}
+            onIncrementStoreViews={handleIncrementStoreViews}
+            onImportStoresBatch={handleImportStoresBatch}
+            onDeleteStore={handleDeleteStore}
+            onToggleStoreLike={handleToggleStoreLike}
+            onToggleStoreDislike={handleToggleStoreDislike}
+            onRateStore={handleRateStore}
+            onAddStoreComment={handleAddStoreComment}
+            onDeleteStoreComment={handleDeleteStoreComment}
+            onToggleCommentLike={handleToggleCommentLike}
+            onAddCommentReply={handleAddCommentReply}
+            onAddServiceNumber={handleAddServiceNumber}
+            onImportServiceNumbersBatch={handleImportServiceNumbersBatch}
+            onUpdateServiceNumber={handleUpdateServiceNumber}
+            onDeleteServiceNumber={handleDeleteServiceNumber}
+            onAddTawsila={handleAddTawsila}
+            onUpdateTawsila={handleUpdateTawsila}
+            onDeleteTawsila={handleDeleteTawsila}
+            onAddCommunityPost={handleAddCommunityPost}
+            onEditCommunityPost={handleEditCommunityPost}
+            onUpdatePostStatus={handleUpdatePostStatus}
+            onDeletePost={handleDeletePost}
+            onTogglePinCommunityPost={handleTogglePinCommunityPost}
+            onToggleCommunityPostSold={handleToggleCommunityPostSold}
+            onToggleCommunityPostCommentsDisabled={
+              handleToggleCommunityPostCommentsDisabled
+            }
+            onTogglePostLike={handleTogglePostLike}
+            onTogglePostDislike={handleTogglePostDislike}
+            onReportPost={handleReportPost}
+            onRestoreReportedPost={handleRestoreReportedPost}
+            onAddCommentToPost={handleAddCommentToPost}
+            onToggleCommunityCommentLike={handleToggleCommunityCommentLike}
+            onToggleCommunityCommentEmoji={handleToggleCommunityCommentEmoji}
+            onAddReplyToCommunityComment={handleAddReplyToCommunityComment}
+            onReportCommunityComment={handleReportCommunityComment}
+            onDeleteCommunityComment={handleDeleteCommunityComment}
+            onEditCommunityComment={handleEditCommunityComment}
+            onEditCommunityReply={handleEditCommunityReply}
+            onDeleteCommunityReply={handleDeleteCommunityReply}
+            onRestoreReportedCommunityComment={
+              handleRestoreReportedCommunityComment
+            }
+            onTogglePinCommunityComment={handleTogglePinCommunityComment}
+            onToggleHideCommunityComment={handleToggleHideCommunityComment}
+            onSendChatMessage={handleSendChatMessage}
+            onReportChatMessage={handleReportChatMessage}
+            onDeleteChatMessage={handleDeleteChatMessage}
+            onUpdateChatCooldown={handleUpdateChatCooldown}
+            onUpdateAutoClearMinutes={handleUpdateAutoClearMinutes}
+            onClearPublicChatNow={handleClearPublicChatNow}
+            onClearPrivateChatSession={handleClearPrivateChatSession}
+            onApplyChatPenalty={handleApplyChatPenalty}
+            onSendPrivateMessage={handleSendPrivateMessage}
+            onMarkPrivateMessagesRead={handleMarkPrivateMessagesRead}
+            onSetChatTypingStatus={handleSetChatTypingStatus}
+            onRespondPrivateChatRequest={handleRespondPrivateChatRequest}
+            onBlockUserInChat={handleBlockUserInChat}
+            onUnblockUserInChat={handleUnblockUserInChat}
+            onTogglePrivateMessageReaction={handleTogglePrivateMessageReaction}
+            onReportPrivateChatMessage={handleReportPrivateChatMessage}
+            onReportUserInPrivateChat={handleReportUserInPrivateChat}
+            onDismissPrivateChatReport={handleDismissPrivateChatReport}
+            onDeleteUserAccountFromChat={handleDeleteUserAccountFromChat}
+            onDeletePrivateChatMessage={handleDeletePrivateChatMessage}
+            onDeletePrivateConversation={handleDeletePrivateConversation}
+            onTogglePinPrivateChatMessage={handleTogglePinPrivateChatMessage}
+            onUpdateSettings={handleUpdateSettings}
+            onUpdateUserAccount={handleUpdateUserAccount}
+            onDeleteUserAccount={handleDeleteUserAccount}
+            onAddTopBanner={handleAddTopBanner}
+            onUpdateTopBanner={handleUpdateTopBanner}
+            onDeleteTopBanner={handleDeleteTopBanner}
+            onAddSquareAd={handleAddSquareAd}
+            onUpdateSquareAd={handleUpdateSquareAd}
+            onTogglePinSquareAd={handleTogglePinSquareAd}
+            onDeleteSquareAd={handleDeleteSquareAd}
+            onUpdatePopupAd={handleUpdatePopupAd}
+            onMarkMessageRead={handleMarkMessageRead}
+            onDeleteMessage={handleDeleteMessage}
+            onAdminReplyToMessage={handleAdminReplyToMessage}
+            onOpenPrivateChatWithUser={(targetUserId, targetUsername) =>
+              setExternalOpenChatTarget({
+                partnerId: targetUserId,
+                partnerUsername: targetUsername,
+                tick: Date.now(),
+              })
+            }
+            onOpenPrivateChatHistoryModal={() =>
+              setExternalOpenHistoryModalTick(Date.now())
+            }
+            externalOpenChatTarget={externalOpenChatTarget}
+            externalOpenHistoryModalTick={externalOpenHistoryModalTick}
+            externalLoginNotification={externalLoginNotification}
+            onRenameStoreCategory={handleRenameStoreCategory}
+            onAddStoreCategory={handleAddStoreCategory}
+            onAddUtilityType={handleAddUtilityType}
+            onSaveUtilitySubmission={handleSaveUtilitySubmission}
+            onDeleteUtilitySubmission={handleDeleteUtilitySubmission}
+            onAddUtilityPost={handleAddUtilityPost}
+            onEditUtilityPost={handleEditUtilityPost}
+            onUpdateUtilityPostStatus={handleUpdateUtilityPostStatus}
+            onDeleteUtilityPost={handleDeleteUtilityPost}
+            onTogglePinUtilityPost={handleTogglePinUtilityPost}
+            onToggleUtilityPostSold={handleToggleUtilityPostSold}
+            onToggleUtilityPostCommentsDisabled={
+              handleToggleUtilityPostCommentsDisabled
+            }
+            onToggleUtilityPostLike={handleToggleUtilityPostLike}
+            onToggleUtilityPostDislike={handleToggleUtilityPostDislike}
+            onReportUtilityPost={handleReportUtilityPost}
+            onRestoreReportedUtilityPost={handleRestoreReportedUtilityPost}
+            onAddCommentToUtilityPost={handleAddCommentToUtilityPost}
+            onToggleUtilityCommentLike={handleToggleUtilityCommentLike}
+            onToggleUtilityCommentEmoji={handleToggleUtilityCommentEmoji}
+            onAddReplyToUtilityComment={handleAddReplyToUtilityComment}
+            onReportUtilityComment={handleReportUtilityComment}
+            onDeleteUtilityComment={handleDeleteUtilityComment}
+            onEditUtilityComment={handleEditUtilityComment}
+            onEditUtilityReply={handleEditUtilityReply}
+            onDeleteUtilityReply={handleDeleteUtilityReply}
+            onRestoreReportedUtilityComment={handleRestoreReportedUtilityComment}
+            onTogglePinUtilityComment={handleTogglePinUtilityComment}
+            onToggleHideUtilityComment={handleToggleHideUtilityComment}
+            onAddBuySellPost={handleAddBuySellPost}
+            onEditBuySellPost={handleEditBuySellPost}
+            onUpdateBuySellPostStatus={handleUpdateBuySellPostStatus}
+            onDeleteBuySellPost={handleDeleteBuySellPost}
+            onTogglePinBuySellPost={handleTogglePinBuySellPost}
+            onToggleBuySellPostSold={handleToggleBuySellPostSold}
+            onToggleBuySellPostCommentsDisabled={
+              handleToggleBuySellPostCommentsDisabled
+            }
+            onToggleBuySellPostLike={handleToggleBuySellPostLike}
+            onToggleBuySellPostDislike={handleToggleBuySellPostDislike}
+            onReportBuySellPost={handleReportBuySellPost}
+            onRestoreReportedBuySellPost={handleRestoreReportedBuySellPost}
+            onAddCommentToBuySellPost={handleAddCommentToBuySellPost}
+            onToggleBuySellCommentLike={handleToggleBuySellCommentLike}
+            onToggleBuySellCommentEmoji={handleToggleBuySellCommentEmoji}
+            onAddReplyToBuySellComment={handleAddReplyToBuySellComment}
+            onReportBuySellComment={handleReportBuySellComment}
+            onDeleteBuySellComment={handleDeleteBuySellComment}
+            onEditBuySellComment={handleEditBuySellComment}
+            onEditBuySellReply={handleEditBuySellReply}
+            onDeleteBuySellReply={handleDeleteBuySellReply}
+            onRestoreReportedBuySellComment={handleRestoreReportedBuySellComment}
+            onTogglePinBuySellComment={handleTogglePinBuySellComment}
+            onToggleHideBuySellComment={handleToggleHideBuySellComment}
+            viewedProfileUsername={viewedProfileUsername}
+            externalJumpTarget={externalJumpTarget}
+            onSelectUserProfile={handleSelectUserProfile}
+            onUpdatePostPrivacy={handleUpdatePostPrivacy}
+            onTriggerMentionNotifications={handleTriggerMentionNotifications}
+            onBulkDeleteCommunityPosts={handleBulkDeleteCommunityPosts}
+            onUpdateMultiplePostsPrivacy={handleUpdateMultiplePostsPrivacy}
+            onSendFriendRequest={handleSendFriendRequest}
+            onCancelFriendRequest={handleCancelFriendRequest}
+            onUnfriendUser={handleUnfriendUser}
+            onToggleFollowUser={handleToggleFollowUser}
+              onSharePostToBuySell={handleSharePostToBuySell}
+            />
+          </SectionErrorBoundary>
+
+          {/* Global Private Chat Popup & External Login Notification when outside Buy/Sell section */}
+          {activeSection !== 'buy_sell' && (
+            <CommunityHubView
+              posts={dbState.buySellPosts || []}
+              liveChatMessages={dbState.liveChatMessages || []}
+              onlineCount={effectiveOnlineCount}
+              onlineStats={onlineStats}
+              currentUser={currentUser}
+              users={dbState.users}
+              chatOnlyOverlayMode={true}
+              enableBuySellPrivateChat={true}
+              externalOpenChatTarget={externalOpenChatTarget}
+              externalOpenHistoryModalTick={externalOpenHistoryModalTick}
+              externalLoginNotification={externalLoginNotification}
+              chatPenalties={dbState.chatPenalties || []}
+              privateChatMessages={dbState.privateChatMessages || []}
+              privateChatStatuses={dbState.privateChatStatuses || {}}
+              chatTypingMap={dbState.chatTypingMap || {}}
+              userBlockedMap={dbState.userBlockedMap || {}}
+              privateChatReports={dbState.privateChatReports || []}
+              onOpenAuthModal={() => setIsAuthModalOpen(true)}
+              onAddCommunityPost={handleAddBuySellPost}
+              onEditCommunityPost={handleEditBuySellPost}
+              onUpdatePostStatus={handleUpdateBuySellPostStatus}
+              onDeletePost={handleDeleteBuySellPost}
+              onTogglePinPost={handleTogglePinBuySellPost}
+              onTogglePostSold={handleToggleBuySellPostSold}
+              onTogglePostCommentsDisabled={
+                handleToggleBuySellPostCommentsDisabled
+              }
+              onTogglePostLike={handleToggleBuySellPostLike}
+              onTogglePostDislike={handleToggleBuySellPostDislike}
+              onReportPost={handleReportBuySellPost}
+              onRestoreReportedPost={handleRestoreReportedBuySellPost}
+              onAddCommentToPost={handleAddCommentToBuySellPost}
+              onToggleCommentLike={handleToggleBuySellCommentLike}
+              onToggleCommentEmoji={handleToggleBuySellCommentEmoji}
+              onAddReplyToComment={handleAddReplyToBuySellComment}
+              onReportComment={handleReportBuySellComment}
+              onDeleteComment={handleDeleteBuySellComment}
+              onEditComment={handleEditBuySellComment}
+              onEditReply={handleEditBuySellReply}
+              onDeleteReply={handleDeleteBuySellReply}
+              onRestoreReportedComment={handleRestoreReportedBuySellComment}
+              onTogglePinComment={handleTogglePinBuySellComment}
+              onToggleHideComment={handleToggleHideBuySellComment}
+              onSendChatMessage={handleSendChatMessage}
+              onReportChatMessage={handleReportChatMessage}
+              onDeleteChatMessage={handleDeleteChatMessage}
+              onUpdateChatCooldown={handleUpdateChatCooldown}
+              onUpdateAutoClearMinutes={handleUpdateAutoClearMinutes}
+              onClearPublicChatNow={handleClearPublicChatNow}
+              onClearPrivateChatSession={handleClearPrivateChatSession}
+              onApplyChatPenalty={handleApplyChatPenalty}
+              onSendPrivateMessage={handleSendPrivateMessage}
+              onMarkPrivateMessagesRead={handleMarkPrivateMessagesRead}
+              onSetChatTypingStatus={handleSetChatTypingStatus}
+              onRespondPrivateChatRequest={handleRespondPrivateChatRequest}
+              onBlockUserInChat={handleBlockUserInChat}
+              onUnblockUserInChat={handleUnblockUserInChat}
+              onTogglePrivateMessageReaction={handleTogglePrivateMessageReaction}
+              onReportPrivateChatMessage={handleReportPrivateChatMessage}
+              onReportUserInPrivateChat={handleReportUserInPrivateChat}
+              onDismissPrivateChatReport={handleDismissPrivateChatReport}
+              onDeleteUserAccountFromChat={handleDeleteUserAccountFromChat}
+              onDeletePrivateChatMessage={handleDeletePrivateChatMessage}
+              onDeletePrivateConversation={handleDeletePrivateConversation}
+              onTogglePinPrivateChatMessage={handleTogglePinPrivateChatMessage}
+            />
+          )}
+        </main>
+      </div>
+
+      {/* Driver Acceptance Welcome Modal ("تم قبول الإضافة") when accepted driver logs in */}
+      {pendingDriverWelcome && (
+        <FluentModal
+          isOpen={!!pendingDriverWelcome}
+          onClose={handleDismissDriverWelcome}
+          title="تم قبول الإضافة"
+          subtitle={`مرحباً بك يا ${pendingDriverWelcome.driverName} في خدمة توصيلة`}
+          maxWidth="md"
+        >
+          <div className="p-6 text-center space-y-4">
+            <div className="w-16 h-16 rounded-full bg-emerald-500/20 border-2 border-emerald-400 text-emerald-400 flex items-center justify-center mx-auto shadow-[0_0_25px_rgba(16,185,129,0.4)]">
+              <CheckCircle2 className="w-9 h-9" />
+            </div>
+            <h3 className="text-xl font-extrabold text-emerald-300">
+              تم قبول الإضافة
+            </h3>
+            <p className="text-xs sm:text-sm text-[#E2E8F0] leading-relaxed">
+              تمت مراجعة وقبول حسابك بنجاح من قِبل إدارة الموقع. يمكنك الآن التوجه إلى قسم &quot;توصيلة&quot; والضغط على زر &quot;شغل&quot; لتفعيل موقعك المباشر واستقبال الطلبات!
+            </p>
+            <div className="pt-2 flex justify-center">
+              <FluentButton
+                variant="emerald"
+                size="lg"
+                onClick={handleDismissDriverWelcome}
+              >
+                إغلاق
+              </FluentButton>
+            </div>
+          </div>
+        </FluentModal>
+      )}
+
+      <AuthModal
+        isOpen={isAuthModalOpen}
+        onClose={() => setIsAuthModalOpen(false)}
+        users={dbState.users}
+        onAuthenticate={handleAuthenticate}
+        onRegisterNewUser={handleRegisterNewUser}
+        onResetUserPassword={handleResetUserPassword}
+      />
+
+      <FooterAndContactModal
+        settings={dbState.settings}
+        currentUser={currentUser}
+        onlineCount={effectiveOnlineCount}
+        onSendMessageToAdmin={handleSendMessageToAdmin}
+        onOpenAuthModal={() => setIsAuthModalOpen(true)}
+      />
+
+      <FacebookBottomNavBar
+        activeTab={activeSection}
+        isMobileMenuOpen={mobileSidebarOpen}
+        unreadChatCount={unreadPrivateMessagesCount}
+        onSelectHomeFeed={() => {
+          setMobileSidebarOpen(false);
+          setExternalOpenHistoryModalTick(0);
+          setActiveSection('home_feed');
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }}
+        onSelectDirectory={() => {
+          setMobileSidebarOpen(false);
+          setExternalOpenHistoryModalTick(0);
+          setActiveSection('directory');
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }}
+        onSelectMarketplace={() => {
+          setMobileSidebarOpen(false);
+          setExternalOpenHistoryModalTick(0);
+          setActiveSection('buy_sell');
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }}
+        onSelectMessages={() => {
+          setMobileSidebarOpen(false);
+          setExternalOpenHistoryModalTick(Date.now());
+        }}
+        onSelectProfile={() => {
+          setMobileSidebarOpen(false);
+          setExternalOpenHistoryModalTick(0);
+          setViewedProfileUsername(currentUser?.username || null);
+          setActiveSection('profile');
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }}
+        onOpenMobileMenu={() => setMobileSidebarOpen(true)}
+      />
+
+      <OfflineIndicator />
+    </div>
+  );
+}

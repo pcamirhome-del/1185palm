@@ -1,0 +1,308 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --navy-950: #0A192F;
+    --navy-900: #112240;
+    --slate-800: #1E293B;
+    --slate-700: #334155;
+    --slate-400: #94A3B8;
+    --fluent-glow: rgba(56, 189, 248, 0.35);
+    --fluent-surface-glow: rgba(56, 189, 248, 0.08);
+  }
+
+  * {
+    box-sizing: border-box;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  html,
+  body,
+  #root {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    max-width: 100vw;
+    overflow-x: hidden !important;
+    background-color: #0A192F;
+    color: #F8FAFC;
+    font-family: 'Cairo', -apple-system, BlinkMacSystemFont, sans-serif;
+  }
+
+  /* Prevent iOS/Android Mobile Auto-Zoom on Focus (Mandatory >= 16px) */
+  input,
+  select,
+  textarea {
+    font-size: 16px !important;
+    line-height: 1.5;
+  }
+}
+
+.font-mono-tabular {
+  font-family: 'IBM Plex Mono', monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Windows 10 Acrylic Surface */
+.fluent-acrylic {
+  background: rgba(17, 34, 64, 0.82);
+  backdrop-filter: blur(16px) saturate(140%);
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
+}
+
+/* Windows 10 Reveal Highlight & Glowing Border */
+.fluent-reveal {
+  position: relative;
+  transition: transform 150ms cubic-bezier(0.16, 1, 0.3, 1),
+              border-color 150ms ease,
+              box-shadow 150ms ease,
+              background-color 150ms ease;
+}
+
+.fluent-reveal::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: var(--reveal-opacity, 0);
+  transition: opacity 200ms ease;
+  background: radial-gradient(
+    280px circle at var(--reveal-x, 50%) var(--reveal-y, 50%),
+    rgba(56, 189, 248, 0.14),
+    transparent 75%
+  );
+  z-index: 1;
+}
+
+.fluent-reveal::after {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 1.5px;
+  pointer-events: none;
+  opacity: var(--reveal-opacity, 0);
+  transition: opacity 200ms ease;
+  background: radial-gradient(
+    220px circle at var(--reveal-x, 50%) var(--reveal-y, 50%),
+    rgba(56, 189, 248, 0.75),
+    rgba(148, 163, 184, 0.2) 50%,
+    transparent 80%
+  );
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  z-index: 2;
+}
+
+.fluent-reveal:hover,
+.fluent-reveal:active,
+.fluent-reveal:focus-within {
+  --reveal-opacity: 1;
+  border-color: rgba(56, 189, 248, 0.45);
+  box-shadow: 0 0 18px -4px rgba(56, 189, 248, 0.25);
+}
+
+/* Isolated Map Viewport to prevent page zoom bleed */
+.isolated-map-container {
+  touch-action: none;
+  overscroll-behavior: contain;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Custom sleek scrollbars for internal tables only */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #0A192F;
+}
+::-webkit-scrollbar-thumb {
+  background: #334155;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #475569;
+}
+
+/* Marquee & Slow Moving Square Ads Animations */
+@keyframes marquee-rtl {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes ticker-scroll {
+  0% {
+    transform: translateX(0%);
+  }
+  100% {
+    transform: translateX(50%);
+  }
+}
+
+.animate-news-marquee {
+  display: inline-block;
+  white-space: nowrap;
+  animation: marquee-rtl 26s linear infinite;
+}
+
+.animate-news-marquee:hover {
+  animation-play-state: paused;
+}
+
+.animate-square-ads {
+  display: flex;
+  width: max-content;
+  animation: ticker-scroll 38s linear infinite;
+}
+
+.animate-square-ads:hover,
+.animate-square-ads:active {
+  animation-play-state: paused;
+}
+
+/* ============================================================================
+   المظهر النهاري (Light Theme) — خلفية بيضاء بالكامل وجميع البيانات والكلام باللون الأسود
+   مع جعل الأزرار (الخط والأشكال) باللون الأبيض، وبوكس الملف الشخصي بالكامل خلفية بيضاء
+   ============================================================================ */
+html.theme-light,
+html.theme-light body,
+html.theme-light #root {
+  background-color: #FFFFFF !important;
+  color: #000000 !important;
+}
+
+html.theme-light .fluent-acrylic:not(button):not(.bottom-fixed-nav) {
+  background: rgba(255, 255, 255, 0.96) !important;
+  color: #000000 !important;
+}
+
+/* تحويل خلفيات الحاويات والكروت (غير الأزرار) إلى اللون الأبيض النقي */
+html.theme-light div[class*="bg-[#0A192F]"],
+html.theme-light div[class*="bg-[#071120]"],
+html.theme-light div[class*="bg-[#0F172A]"],
+html.theme-light div[class*="bg-[#112240]"],
+html.theme-light div[class*="bg-[#1E293B]"],
+html.theme-light div[class*="bg-slate-900"],
+html.theme-light div[class*="bg-slate-950"],
+html.theme-light section[class*="bg-[#"],
+html.theme-light main[class*="bg-[#"],
+html.theme-light aside[class*="bg-[#"],
+html.theme-light header[class*="bg-[#"],
+html.theme-light footer[class*="bg-[#"],
+html.theme-light article[class*="bg-[#"] {
+  background-color: #FFFFFF !important;
+  background-image: none !important;
+}
+
+/* الملف الشخصي: البوكس بالكامل بالبيانات التي بالأعلى (الاسم، المتابعين، أتابعه، الملاحظة، الفلتر) خلفية بيضاء بالكامل */
+html.theme-light .profile-header-card,
+html.theme-light .profile-header-card .profile-white-box {
+  background: #FFFFFF !important;
+  background-color: #FFFFFF !important;
+  background-image: none !important;
+  border-color: #CBD5E1 !important;
+  color: #000000 !important;
+}
+
+html.theme-light .profile-header-card h2,
+html.theme-light .profile-header-card p,
+html.theme-light .profile-header-card .profile-white-box,
+html.theme-light .profile-header-card .profile-white-box span,
+html.theme-light .profile-header-card .profile-white-box p,
+html.theme-light .profile-header-card .profile-white-box svg {
+  color: #000000 !important;
+}
+
+html.theme-light [class*="border-[#334155]"],
+html.theme-light [class*="border-slate-700"],
+html.theme-light [class*="border-slate-800"] {
+  border-color: #CBD5E1 !important;
+}
+
+/* تحويل جميع النصوص والبيانات المكتوبة خارج الأزرار إلى اللون الأسود الواضح */
+html.theme-light [class*="text-[#F8FAFC]"],
+html.theme-light [class*="text-[#E2E8F0]"],
+html.theme-light [class*="text-[#94A3B8]"],
+html.theme-light [class*="text-slate-"],
+html.theme-light [class*="text-sky-100"],
+html.theme-light [class*="text-sky-200"],
+html.theme-light [class*="text-sky-300"],
+html.theme-light [class*="text-sky-400"],
+html.theme-light [class*="text-emerald-200"],
+html.theme-light [class*="text-emerald-300"],
+html.theme-light [class*="text-amber-200"],
+html.theme-light [class*="text-amber-300"],
+html.theme-light [class*="text-rose-200"],
+html.theme-light [class*="text-rose-300"],
+html.theme-light [class*="text-purple-200"],
+html.theme-light [class*="text-purple-300"],
+html.theme-light p,
+html.theme-light span,
+html.theme-light h1,
+html.theme-light h2,
+html.theme-light h3,
+html.theme-light h4,
+html.theme-light h5,
+html.theme-light h6,
+html.theme-light label,
+html.theme-light strong,
+html.theme-light td,
+html.theme-light th,
+html.theme-light input,
+html.theme-light select,
+html.theme-light textarea,
+html.theme-light option {
+  color: #000000 !important;
+}
+
+/* في المظهر النهاري: الأزرار يكون الخط والأشكال (الأيقونات) باللون الأبيض */
+html.theme-light button:not(.profile-white-box) {
+  color: #FFFFFF !important;
+}
+
+html.theme-light button:not(.profile-white-box)[class*="bg-white"],
+html.theme-light button:not(.profile-white-box)[class*="bg-slate-50"],
+html.theme-light button:not(.profile-white-box)[class*="bg-slate-100"],
+html.theme-light button:not(.profile-white-box)[class*="bg-slate-200"] {
+  background-color: #1E293B !important;
+}
+
+html.theme-light button:not(.profile-white-box) span,
+html.theme-light button:not(.profile-white-box) p,
+html.theme-light button:not(.profile-white-box) div,
+html.theme-light button:not(.profile-white-box) strong,
+html.theme-light button:not(.profile-white-box) svg {
+  color: #FFFFFF !important;
+}
+
+html.theme-light input,
+html.theme-light select,
+html.theme-light textarea {
+  background-color: #FFFFFF !important;
+  border-color: #94A3B8 !important;
+}
+
+html.theme-light input::placeholder,
+html.theme-light textarea::placeholder {
+  color: #475569 !important;
+}
+
+html.theme-light ::-webkit-scrollbar-track {
+  background: #F1F5F9;
+}
+
+html.theme-light ::-webkit-scrollbar-thumb {
+  background: #94A3B8;
+}
