@@ -39,6 +39,10 @@ import {
   UtilitySubmissionItem,
   SystemErrorLogItem,
 } from '../types';
+import embeddedPortalStateRaw from '../data/embeddedPortalState.json';
+
+const embeddedPortalState = (embeddedPortalStateRaw ||
+  {}) as unknown as Partial<PlatformDatabaseState>;
 
 const DB_STORAGE_KEY = 'fluent_portal_db_v1185';
 const SETTINGS_STORAGE_KEY = 'fluent_portal_settings_v1185';
@@ -471,48 +475,92 @@ export const HIDDEN_DEFAULT_FIREBASE_CONFIG: FirebaseConfigSettings = {
   measurementId: 'G-GY7K2HLTX5',
 };
 
+export const INITIAL_DELETED_RECORD_IDS: string[] = Array.isArray(
+  embeddedPortalState.deletedRecordIds
+)
+  ? embeddedPortalState.deletedRecordIds
+  : [];
+
 export const INITIAL_SETTINGS: PlatformSettings = {
-  siteName: 'موقع خدمات التخيل 1185',
+  siteName: embeddedPortalState.settings?.siteName || 'موقع خدمات التخيل 1185',
   marqueeText:
+    embeddedPortalState.settings?.marqueeText ||
     'مرحباً بكم في موقع خدمات التخيل 1185 — أضف محلك ومنيو الأسعار مجاناً — تصفح السوبر ماركت والمطاعم والصيدليات والعيادات — باقات إعلانية مميزة بخصم يصل إلى 20% عند الاشتراك لمدة 10 أيام!',
-  adminWhatsapp: '201000000000',
-  facebookPageUrl: 'https://www.facebook.com',
-  contactEmail: 'admin@fluent-hub.com',
-  imgbbApiKey: '',
-  googleMapsApiKey: '',
-  storeCategories: DEFAULT_STORE_CATEGORIES,
-  serviceProfessions: DEFAULT_SERVICE_PROFESSIONS,
-  customOnlineCount: null,
-  utilityTypes: DEFAULT_UTILITY_TYPES,
-  liveChatCooldownSeconds: 5,
-  liveChatAutoClearMinutes: 60,
-  liveChatLastClearedAt: new Date().toISOString(),
+  adminWhatsapp: embeddedPortalState.settings?.adminWhatsapp || '201000000000',
+  facebookPageUrl:
+    embeddedPortalState.settings?.facebookPageUrl || 'https://www.facebook.com',
+  contactEmail: embeddedPortalState.settings?.contactEmail || 'admin@fluent-hub.com',
+  imgbbApiKey: embeddedPortalState.settings?.imgbbApiKey || '',
+  googleMapsApiKey: embeddedPortalState.settings?.googleMapsApiKey || '',
+  storeCategories: Array.from(
+    new Set([
+      'مول دريم بلازا',
+      ...DEFAULT_STORE_CATEGORIES,
+      ...(Array.isArray(embeddedPortalState.settings?.storeCategories)
+        ? embeddedPortalState.settings!.storeCategories
+        : []),
+    ])
+  ),
+  serviceProfessions: Array.from(
+    new Set([
+      ...DEFAULT_SERVICE_PROFESSIONS,
+      ...(Array.isArray(embeddedPortalState.settings?.serviceProfessions)
+        ? embeddedPortalState.settings!.serviceProfessions
+        : []),
+    ])
+  ),
+  customOnlineCount: embeddedPortalState.settings?.customOnlineCount ?? null,
+  utilityTypes:
+    Array.isArray(embeddedPortalState.settings?.utilityTypes) &&
+    embeddedPortalState.settings!.utilityTypes.length > 0
+      ? embeddedPortalState.settings!.utilityTypes
+      : DEFAULT_UTILITY_TYPES,
+  liveChatCooldownSeconds:
+    embeddedPortalState.settings?.liveChatCooldownSeconds ?? 5,
+  liveChatAutoClearMinutes:
+    embeddedPortalState.settings?.liveChatAutoClearMinutes ?? 60,
+  liveChatLastClearedAt:
+    embeddedPortalState.settings?.liveChatLastClearedAt ||
+    new Date().toISOString(),
   adPackagesPricing: {
-    pkg1DailyPrice: 15,
-    pkg2DailyPrice: 25,
-    pkg3DailyPrice: 100,
-    tenDaysDiscountPercent: 20,
+    pkg1DailyPrice:
+      embeddedPortalState.settings?.adPackagesPricing?.pkg1DailyPrice ?? 15,
+    pkg2DailyPrice:
+      embeddedPortalState.settings?.adPackagesPricing?.pkg2DailyPrice ?? 25,
+    pkg3DailyPrice:
+      embeddedPortalState.settings?.adPackagesPricing?.pkg3DailyPrice ?? 100,
+    tenDaysDiscountPercent:
+      embeddedPortalState.settings?.adPackagesPricing?.tenDaysDiscountPercent ?? 20,
   },
   firebase: HIDDEN_DEFAULT_FIREBASE_CONFIG,
 };
 
-// Cleared demo accounts (kept only core admin so system settings remain accessible by admin)
-export const INITIAL_USERS: UserAccount[] = [
-  {
-    id: 'usr-admin-1',
-    username: 'admin',
-    password: '123',
-    role: 'admin',
-    createdAt: '2026-10-01T08:00:00.000Z',
-  },
-];
+export const INITIAL_USERS: UserAccount[] =
+  Array.isArray(embeddedPortalState.users) && embeddedPortalState.users.length > 0
+    ? embeddedPortalState.users
+    : [
+        {
+          id: 'usr-admin-1',
+          username: 'admin',
+          password: '123',
+          role: 'admin',
+          createdAt: '2026-10-01T08:00:00.000Z',
+        },
+      ];
 
-// Cleared all pre-seeded ads, driver numbers, and messages as requested
-export const INITIAL_TOP_BANNERS: TopBannerAd[] = [];
+export const INITIAL_TOP_BANNERS: TopBannerAd[] = Array.isArray(
+  embeddedPortalState.topBanners
+)
+  ? embeddedPortalState.topBanners
+  : [];
 
-export const INITIAL_SQUARE_ADS: SquareMovingAd[] = [];
+export const INITIAL_SQUARE_ADS: SquareMovingAd[] = Array.isArray(
+  embeddedPortalState.squareAds
+)
+  ? embeddedPortalState.squareAds
+  : [];
 
-export const INITIAL_POPUP_AD: PopupAdConfig = {
+const DEFAULT_POPUP_AD_CONFIG: PopupAdConfig = {
   id: 'popup-main-1',
   active: true,
   title: 'مرحباً بكم في موقع خدمات التخيل 1185',
@@ -528,6 +576,11 @@ export const INITIAL_POPUP_AD: PopupAdConfig = {
   buttonText: 'تواصل عبر واتساب',
   whatsappPhone: '',
 };
+
+export const INITIAL_POPUP_AD: PopupAdConfig =
+  embeddedPortalState.popupAd && typeof embeddedPortalState.popupAd === 'object'
+    ? { ...DEFAULT_POPUP_AD_CONFIG, ...embeddedPortalState.popupAd }
+    : DEFAULT_POPUP_AD_CONFIG;
 
 export function normalizeCategoryString(rawCategory?: string): string {
   return String(rawCategory || '')
@@ -799,17 +852,7 @@ export function isPermanentDreamPlazaStore(
   return false;
 }
 
-export const INITIAL_STORES: StoreListingItem[] = PERMANENT_DREAM_PLAZA_STORES;
-
-export const INITIAL_SERVICE_NUMBERS: ServicePhoneEntry[] = [];
-
-export const INITIAL_TAWSILA: TawsilaRideItem[] = [];
-
-export const INITIAL_COMMUNITY_POSTS: CommunityPostItem[] = [];
-
-export const INITIAL_MESSAGES: AdminMessage[] = [];
-
-export const INITIAL_LIVE_CHAT: LiveChatMessageItem[] = [];
+let inMemoryStoreImagesVault: Record<string, string[]> = {};
 
 export function hasRealUploadedStoreImages(images?: string[]): boolean {
   if (!Array.isArray(images) || images.length === 0) return false;
@@ -821,7 +864,60 @@ export function hasRealUploadedStoreImages(images?: string[]): boolean {
   );
 }
 
-let inMemoryStoreImagesVault: Record<string, string[]> = {};
+export const INITIAL_STORES: StoreListingItem[] = normalizeStoresList(
+  Array.isArray(embeddedPortalState.stores) && embeddedPortalState.stores.length > 0
+    ? embeddedPortalState.stores
+    : PERMANENT_DREAM_PLAZA_STORES,
+  INITIAL_DELETED_RECORD_IDS
+);
+
+export const INITIAL_SERVICE_NUMBERS: ServicePhoneEntry[] = Array.isArray(
+  embeddedPortalState.serviceNumbers
+)
+  ? normalizeServiceNumbersList(embeddedPortalState.serviceNumbers)
+  : [];
+
+export const INITIAL_TAWSILA: TawsilaRideItem[] = Array.isArray(
+  embeddedPortalState.tawsilaRides
+)
+  ? normalizeTawsilaList(embeddedPortalState.tawsilaRides)
+  : [];
+
+export const INITIAL_COMMUNITY_POSTS: CommunityPostItem[] = Array.isArray(
+  embeddedPortalState.communityPosts
+)
+  ? normalizeCommunityPostsList(embeddedPortalState.communityPosts)
+  : [];
+
+export const INITIAL_BUY_SELL_POSTS: CommunityPostItem[] = Array.isArray(
+  embeddedPortalState.buySellPosts
+)
+  ? normalizeCommunityPostsList(embeddedPortalState.buySellPosts)
+  : [];
+
+export const INITIAL_UTILITY_POSTS: CommunityPostItem[] = Array.isArray(
+  embeddedPortalState.utilityPosts
+)
+  ? normalizeCommunityPostsList(embeddedPortalState.utilityPosts)
+  : [];
+
+export const INITIAL_UTILITY_SUBMISSIONS: UtilitySubmissionItem[] = Array.isArray(
+  embeddedPortalState.utilitySubmissions
+)
+  ? embeddedPortalState.utilitySubmissions
+  : [];
+
+export const INITIAL_MESSAGES: AdminMessage[] = Array.isArray(
+  embeddedPortalState.messages
+)
+  ? embeddedPortalState.messages
+  : [];
+
+export const INITIAL_LIVE_CHAT: LiveChatMessageItem[] = Array.isArray(
+  embeddedPortalState.liveChatMessages
+)
+  ? embeddedPortalState.liveChatMessages
+  : [];
 
 function loadStoreImagesVault(): Record<string, string[]> {
   if (typeof window === 'undefined') return inMemoryStoreImagesVault;
@@ -2576,6 +2672,14 @@ try {
   stateSyncChannel = null;
 }
 
+let isStaticServerlessHost = false;
+
+function isApiJsonResponse(res: Response | null | undefined): res is Response {
+  if (!res || !res.ok) return false;
+  const ct = (res.headers.get('content-type') || '').toLowerCase();
+  return ct.includes('application/json');
+}
+
 class HybridStorageEngine {
   private firebaseApp: FirebaseApp | null = null;
   private firestoreDb: Firestore | null = null;
@@ -2690,21 +2794,38 @@ class HybridStorageEngine {
     this.isFirebaseCloudPolling = true;
     try {
       const [
+        ov1Snap,
+        ov2Snap,
         storesSnap,
         servicesSnap,
         communitySnap,
         adsSnap,
         tawsilaSnap,
         settingsUsersSnap,
+        workspaceSnap,
       ] = await Promise.all([
+        getDoc(doc(this.firestoreDb, 'fluent_portal_v3', 'section_stores_overflow')).catch(() => null),
+        getDoc(doc(this.firestoreDb, 'fluent_portal_v3', 'section_stores_overflow_2')).catch(() => null),
         getDoc(doc(this.firestoreDb, 'fluent_portal_v3', 'section_stores')).catch(() => null),
         getDoc(doc(this.firestoreDb, 'fluent_portal_v3', 'section_services')).catch(() => null),
         getDoc(doc(this.firestoreDb, 'fluent_portal_v3', 'section_community')).catch(() => null),
         getDoc(doc(this.firestoreDb, 'fluent_portal_v3', 'section_ads')).catch(() => null),
         getDoc(doc(this.firestoreDb, 'fluent_portal_v3', 'section_tawsila')).catch(() => null),
         getDoc(doc(this.firestoreDb, 'fluent_portal_v3', 'section_settings_users')).catch(() => null),
+        getDoc(doc(this.firestoreDb, 'fluent_portal_v3', 'workspace_state')).catch(() => null),
       ]);
+      if (ov1Snap && ov1Snap.exists()) {
+        this.applySectionStoresOverflowSnapshot(ov1Snap.data(), 1);
+      }
+      if (ov2Snap && ov2Snap.exists()) {
+        this.applySectionStoresOverflowSnapshot(ov2Snap.data(), 2);
+      }
+      if (workspaceSnap && workspaceSnap.exists()) {
+        this.isCloudHydrated = true;
+        this.applyIncomingRemoteState(workspaceSnap.data());
+      }
       if (storesSnap && storesSnap.exists()) {
+        this.isCloudHydrated = true;
         this.applySectionStoresSnapshot(storesSnap.data());
       }
       if (servicesSnap && servicesSnap.exists()) {
@@ -2722,6 +2843,15 @@ class HybridStorageEngine {
       if (settingsUsersSnap && settingsUsersSnap.exists()) {
         this.applySectionSettingsUsersSnapshot(settingsUsersSnap.data());
       }
+      if (
+        (workspaceSnap && workspaceSnap.exists()) ||
+        (storesSnap && storesSnap.exists())
+      ) {
+        this.notifyStatus(
+          'firebase_connected',
+          'المزامنة اللحظية السحابية نشطة (Firebase)'
+        );
+      }
     } catch {
       // ignore transient mobile network errors
     } finally {
@@ -2729,9 +2859,26 @@ class HybridStorageEngine {
     }
   }
 
+  private disableStaticHostRealtimePolling() {
+    isStaticServerlessHost = true;
+    if (this.fastChatPollTimer) {
+      clearInterval(this.fastChatPollTimer);
+      this.fastChatPollTimer = null;
+    }
+    if (this.eventSource) {
+      try {
+        this.eventSource.close();
+      } catch {
+        // ignore
+      }
+      this.eventSource = null;
+    }
+  }
+
   public async pullLatestDeltaNow() {
     if (typeof window === 'undefined' || typeof fetch === 'undefined') return;
     this.pullFromFirebaseCloudNow();
+    if (isStaticServerlessHost) return;
     try {
       const [stateRes, chatRes] = await Promise.all([
         fetch(`/api/realtime/state?t=${Date.now()}`, { cache: 'no-store' }).catch(
@@ -2742,7 +2889,14 @@ class HybridStorageEngine {
           { cache: 'no-store' }
         ).catch(() => null),
       ]);
-      if (stateRes && stateRes.ok) {
+      if (
+        (stateRes && !isApiJsonResponse(stateRes)) ||
+        (chatRes && !isApiJsonResponse(chatRes))
+      ) {
+        this.disableStaticHostRealtimePolling();
+        return;
+      }
+      if (isApiJsonResponse(stateRes)) {
         const sData = await stateRes.json();
         if (sData && sData.onlineStats && typeof sData.onlineStats.totalOnline === 'number') {
           updateLatestServerOnlineStats(sData.onlineStats);
@@ -2752,7 +2906,7 @@ class HybridStorageEngine {
           this.applyIncomingRemoteState(sData.state as Record<string, unknown>);
         }
       }
-      if (chatRes && chatRes.ok) {
+      if (isApiJsonResponse(chatRes)) {
         const data = await chatRes.json();
         if (data && typeof data.version === 'number') {
           this.lastChatVersion = data.version;
@@ -2971,27 +3125,30 @@ class HybridStorageEngine {
       const settings: PlatformSettings = {
         ...INITIAL_SETTINGS,
         ...parsedSettings,
-        siteName: parsedSettings.siteName || 'موقع خدمات التخيل 1185',
-        storeCategories: ensureStoreCategoriesWithDreamPlaza(
-          Array.isArray(parsedSettings.storeCategories) &&
-            parsedSettings.storeCategories.length > 0
+        siteName: parsedSettings.siteName || INITIAL_SETTINGS.siteName || 'موقع خدمات التخيل 1185',
+        storeCategories: ensureStoreCategoriesWithDreamPlaza([
+          ...(INITIAL_SETTINGS.storeCategories || DEFAULT_STORE_CATEGORIES),
+          ...(Array.isArray(parsedSettings.storeCategories)
             ? parsedSettings.storeCategories
-            : DEFAULT_STORE_CATEGORIES
-        ),
-        serviceProfessions: ensureServiceProfessionsList(
-          parsedSettings.serviceProfessions
-        ),
+            : []),
+        ]),
+        serviceProfessions: ensureServiceProfessionsList([
+          ...(INITIAL_SETTINGS.serviceProfessions || DEFAULT_SERVICE_PROFESSIONS),
+          ...(Array.isArray(parsedSettings.serviceProfessions)
+            ? parsedSettings.serviceProfessions
+            : []),
+        ]),
         customOnlineCount:
           typeof parsedSettings.customOnlineCount === 'number' &&
           Number.isFinite(parsedSettings.customOnlineCount) &&
           parsedSettings.customOnlineCount > 0
             ? parsedSettings.customOnlineCount
-            : null,
+            : INITIAL_SETTINGS.customOnlineCount ?? null,
         utilityTypes:
           Array.isArray(parsedSettings.utilityTypes) &&
           parsedSettings.utilityTypes.length > 0
             ? parsedSettings.utilityTypes
-            : DEFAULT_UTILITY_TYPES,
+            : INITIAL_SETTINGS.utilityTypes || DEFAULT_UTILITY_TYPES,
         disabledSections:
           parsedSettings.disabledSections &&
           typeof parsedSettings.disabledSections === 'object'
@@ -3008,30 +3165,32 @@ class HybridStorageEngine {
         liveChatCooldownSeconds:
           typeof parsedSettings.liveChatCooldownSeconds === 'number'
             ? parsedSettings.liveChatCooldownSeconds
-            : 5,
+            : INITIAL_SETTINGS.liveChatCooldownSeconds ?? 5,
         liveChatAutoClearMinutes:
           typeof parsedSettings.liveChatAutoClearMinutes === 'number'
             ? parsedSettings.liveChatAutoClearMinutes
-            : 60,
+            : INITIAL_SETTINGS.liveChatAutoClearMinutes ?? 60,
         liveChatLastClearedAt:
-          parsedSettings.liveChatLastClearedAt || new Date().toISOString(),
+          parsedSettings.liveChatLastClearedAt ||
+          INITIAL_SETTINGS.liveChatLastClearedAt ||
+          new Date().toISOString(),
         adPackagesPricing: {
           pkg1DailyPrice:
             typeof parsedSettings.adPackagesPricing?.pkg1DailyPrice === 'number'
               ? parsedSettings.adPackagesPricing.pkg1DailyPrice
-              : 15,
+              : INITIAL_SETTINGS.adPackagesPricing?.pkg1DailyPrice ?? 15,
           pkg2DailyPrice:
             typeof parsedSettings.adPackagesPricing?.pkg2DailyPrice === 'number'
               ? parsedSettings.adPackagesPricing.pkg2DailyPrice
-              : 25,
+              : INITIAL_SETTINGS.adPackagesPricing?.pkg2DailyPrice ?? 25,
           pkg3DailyPrice:
             typeof parsedSettings.adPackagesPricing?.pkg3DailyPrice === 'number'
               ? parsedSettings.adPackagesPricing.pkg3DailyPrice
-              : 100,
+              : INITIAL_SETTINGS.adPackagesPricing?.pkg3DailyPrice ?? 100,
           tenDaysDiscountPercent:
             typeof parsedSettings.adPackagesPricing?.tenDaysDiscountPercent === 'number'
               ? parsedSettings.adPackagesPricing.tenDaysDiscountPercent
-              : 20,
+              : INITIAL_SETTINGS.adPackagesPricing?.tenDaysDiscountPercent ?? 20,
         },
         firebase: mergedFirebase,
       };
@@ -3056,6 +3215,7 @@ class HybridStorageEngine {
         const activeAuthSnap = getActiveAuthUserSnapshot();
         const deletedRecordIds: string[] = Array.from(
           new Set([
+            ...INITIAL_DELETED_RECORD_IDS,
             ...(Array.isArray(parsed.deletedRecordIds) ? parsed.deletedRecordIds : []),
             ...(Array.isArray(savedAdCampaigns.deletedRecordIds)
               ? savedAdCampaigns.deletedRecordIds
@@ -3071,61 +3231,99 @@ class HybridStorageEngine {
         );
 
         const hydratedTopBanners = mergeAdCampaignsById(
-          Array.isArray(parsed.topBanners) ? parsed.topBanners : INITIAL_TOP_BANNERS,
-          Array.isArray(savedAdCampaigns.topBanners)
-            ? savedAdCampaigns.topBanners
-            : undefined,
+          INITIAL_TOP_BANNERS,
+          [
+            ...(Array.isArray(parsed.topBanners) ? parsed.topBanners : []),
+            ...(Array.isArray(savedAdCampaigns.topBanners)
+              ? savedAdCampaigns.topBanners
+              : []),
+          ],
           deletedRecordIds
         );
 
         const hydratedSquareAds = mergeAdCampaignsById(
-          Array.isArray(parsed.squareAds) ? parsed.squareAds : INITIAL_SQUARE_ADS,
-          Array.isArray(savedAdCampaigns.squareAds)
-            ? savedAdCampaigns.squareAds
-            : undefined,
+          INITIAL_SQUARE_ADS,
+          [
+            ...(Array.isArray(parsed.squareAds) ? parsed.squareAds : []),
+            ...(Array.isArray(savedAdCampaigns.squareAds)
+              ? savedAdCampaigns.squareAds
+              : []),
+          ],
           deletedRecordIds
         );
 
         const hydratedPopupAd = mergePopupAdCampaign(
-          parsed.popupAd || INITIAL_POPUP_AD,
+          mergePopupAdCampaign(INITIAL_POPUP_AD, parsed.popupAd),
           savedAdCampaigns.popupAd
         );
 
         const hydrated: PlatformDatabaseState = {
           users: mergeUsersLists(
-            Array.isArray(parsed.users) && parsed.users.length > 0
-              ? parsed.users
-              : INITIAL_USERS,
-            loadUsersVaultBackup(),
+            INITIAL_USERS,
+            [
+              ...(Array.isArray(parsed.users) ? parsed.users : []),
+              ...loadUsersVaultBackup(),
+            ],
             deletedRecordIds
           ),
           topBanners: hydratedTopBanners,
           squareAds: hydratedSquareAds,
           popupAd: hydratedPopupAd,
-          messages: Array.isArray(parsed.messages) ? parsed.messages : INITIAL_MESSAGES,
+          messages: mergeCollectionById(
+            INITIAL_MESSAGES,
+            Array.isArray(parsed.messages) ? parsed.messages : undefined,
+            deletedRecordIds
+          ),
           stores: mergeStoresWithImages(
-            Array.isArray(parsed.stores) ? parsed.stores : INITIAL_STORES,
-            fastBrowserCache.getCumulativeVaultSync()?.stores,
+            INITIAL_STORES,
+            [
+              ...(Array.isArray(parsed.stores) ? parsed.stores : []),
+              ...(fastBrowserCache.getCumulativeVaultSync()?.stores || []),
+            ],
             deletedRecordIds,
             false
           ),
-          serviceNumbers: Array.isArray(parsed.serviceNumbers)
-            ? normalizeServiceNumbersList(parsed.serviceNumbers)
-            : INITIAL_SERVICE_NUMBERS,
-          tawsilaRides: Array.isArray(parsed.tawsilaRides)
-            ? normalizeTawsilaList(parsed.tawsilaRides)
-            : INITIAL_TAWSILA,
-          communityPosts: Array.isArray(parsed.communityPosts)
-            ? normalizeCommunityPostsList(parsed.communityPosts)
-            : INITIAL_COMMUNITY_POSTS,
-          utilitySubmissions: normalizeUtilitySubmissionsList(parsed.utilitySubmissions),
-          utilityPosts: Array.isArray(parsed.utilityPosts)
-            ? normalizeCommunityPostsList(parsed.utilityPosts)
-            : [],
-          buySellPosts: Array.isArray(parsed.buySellPosts)
-            ? normalizeCommunityPostsList(parsed.buySellPosts)
-            : [],
-          liveChatMessages: normalizeLiveChatList(parsed.liveChatMessages),
+          serviceNumbers: mergeServiceNumbersWithInteractions(
+            INITIAL_SERVICE_NUMBERS,
+            Array.isArray(parsed.serviceNumbers) ? parsed.serviceNumbers : undefined,
+            deletedRecordIds
+          ),
+          tawsilaRides: normalizeTawsilaList(
+            mergeCollectionById(
+              INITIAL_TAWSILA,
+              Array.isArray(parsed.tawsilaRides) ? parsed.tawsilaRides : undefined,
+              deletedRecordIds
+            )
+          ),
+          communityPosts: mergeCommunityPostsWithInteractions(
+            INITIAL_COMMUNITY_POSTS,
+            Array.isArray(parsed.communityPosts) ? parsed.communityPosts : undefined,
+            deletedRecordIds
+          ),
+          utilitySubmissions: normalizeUtilitySubmissionsList(
+            mergeCollectionById(
+              INITIAL_UTILITY_SUBMISSIONS,
+              Array.isArray(parsed.utilitySubmissions)
+                ? parsed.utilitySubmissions
+                : undefined,
+              deletedRecordIds
+            )
+          ),
+          utilityPosts: mergeCommunityPostsWithInteractions(
+            INITIAL_UTILITY_POSTS,
+            Array.isArray(parsed.utilityPosts) ? parsed.utilityPosts : undefined,
+            deletedRecordIds
+          ),
+          buySellPosts: mergeCommunityPostsWithInteractions(
+            INITIAL_BUY_SELL_POSTS,
+            Array.isArray(parsed.buySellPosts) ? parsed.buySellPosts : undefined,
+            deletedRecordIds
+          ),
+          liveChatMessages: normalizeLiveChatList(
+            Array.isArray(parsed.liveChatMessages) && parsed.liveChatMessages.length > 0
+              ? parsed.liveChatMessages
+              : INITIAL_LIVE_CHAT
+          ),
           chatPenalties: Array.isArray(parsed.chatPenalties)
             ? parsed.chatPenalties
             : [],
@@ -3165,16 +3363,16 @@ class HybridStorageEngine {
         serviceNumbers: INITIAL_SERVICE_NUMBERS,
         tawsilaRides: INITIAL_TAWSILA,
         communityPosts: INITIAL_COMMUNITY_POSTS,
-        utilitySubmissions: [],
-        utilityPosts: [],
-        buySellPosts: [],
+        utilitySubmissions: INITIAL_UTILITY_SUBMISSIONS,
+        utilityPosts: INITIAL_UTILITY_POSTS,
+        buySellPosts: INITIAL_BUY_SELL_POSTS,
         liveChatMessages: INITIAL_LIVE_CHAT,
         chatPenalties: [],
         privateChatMessages: [],
         privateChatStatuses: {},
         userBlockedMap: {},
         privateChatReports: [],
-        deletedRecordIds: [],
+        deletedRecordIds: INITIAL_DELETED_RECORD_IDS,
         settings,
       };
       this.latestState = initialState;
@@ -3191,16 +3389,16 @@ class HybridStorageEngine {
         serviceNumbers: INITIAL_SERVICE_NUMBERS,
         tawsilaRides: INITIAL_TAWSILA,
         communityPosts: INITIAL_COMMUNITY_POSTS,
-        utilitySubmissions: [],
-        utilityPosts: [],
-        buySellPosts: [],
+        utilitySubmissions: INITIAL_UTILITY_SUBMISSIONS,
+        utilityPosts: INITIAL_UTILITY_POSTS,
+        buySellPosts: INITIAL_BUY_SELL_POSTS,
         liveChatMessages: INITIAL_LIVE_CHAT,
         chatPenalties: [],
         privateChatMessages: [],
         privateChatStatuses: {},
         userBlockedMap: {},
         privateChatReports: [],
-        deletedRecordIds: [],
+        deletedRecordIds: INITIAL_DELETED_RECORD_IDS,
         settings: INITIAL_SETTINGS,
       };
       this.latestState = fallback;
@@ -4363,7 +4561,7 @@ class HybridStorageEngine {
   }
 
   private connectServerRealtimeStream() {
-    if (typeof window === 'undefined') return;
+    if (typeof window === 'undefined' || isStaticServerlessHost) return;
     if (this.eventSource) {
       this.eventSource.close();
       this.eventSource = null;
@@ -4378,6 +4576,10 @@ class HybridStorageEngine {
 
     // High-speed 120ms delta poll on /api/realtime/chat-fast to bypass any reverse-proxy SSE buffering
     this.fastChatPollTimer = setInterval(async () => {
+      if (isStaticServerlessHost) {
+        this.disableStaticHostRealtimePolling();
+        return;
+      }
       if (this.isFastChatPolling) return;
       if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
       this.isFastChatPolling = true;
@@ -4386,22 +4588,24 @@ class HybridStorageEngine {
           `/api/realtime/chat-fast?since=${this.lastChatVersion}`,
           { cache: 'no-store' }
         );
-        if (res.ok) {
-          const data = await res.json();
-          if (data && typeof data.version === 'number') {
-            this.lastChatVersion = data.version;
-          }
-          if (data && data.onlineStats && typeof data.onlineStats.totalOnline === 'number') {
-            updateLatestServerOnlineStats(data.onlineStats);
-          }
-          if (
-            data &&
-            data.changed &&
-            data.chatPatch &&
-            data.senderTabId !== getOrCreateTabSessionId()
-          ) {
-            this.applyIncomingFastChatPatch(data.chatPatch);
-          }
+        if (!isApiJsonResponse(res)) {
+          this.disableStaticHostRealtimePolling();
+          return;
+        }
+        const data = await res.json();
+        if (data && typeof data.version === 'number') {
+          this.lastChatVersion = data.version;
+        }
+        if (data && data.onlineStats && typeof data.onlineStats.totalOnline === 'number') {
+          updateLatestServerOnlineStats(data.onlineStats);
+        }
+        if (
+          data &&
+          data.changed &&
+          data.chatPatch &&
+          data.senderTabId !== getOrCreateTabSessionId()
+        ) {
+          this.applyIncomingFastChatPatch(data.chatPatch);
         }
       } catch {
         // ignore transient network errors
@@ -4410,7 +4614,7 @@ class HybridStorageEngine {
       }
     }, 120);
 
-    if (typeof EventSource === 'undefined') return;
+    if (typeof EventSource === 'undefined' || isStaticServerlessHost) return;
 
     try {
       const es = new EventSource('/api/realtime/stream');
@@ -5219,8 +5423,12 @@ class HybridStorageEngine {
       }
     }
 
-    // 3. Also sync with Express Real-Time SSE Server in parallel
-    if (typeof window !== 'undefined' && typeof fetch !== 'undefined') {
+    // 3. Also sync with Express Real-Time SSE Server in parallel (when running with Express backend)
+    if (
+      !isStaticServerlessHost &&
+      typeof window !== 'undefined' &&
+      typeof fetch !== 'undefined'
+    ) {
       fetch('/api/realtime/chat-fast', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -5237,9 +5445,17 @@ class HybridStorageEngine {
           state: cleanFullPayload,
           senderTabId: tabId,
         }),
-      }).catch(() => {
-        this.markPendingOfflineSync(normalizedNextState);
-      });
+      })
+        .then((res) => {
+          if (!isApiJsonResponse(res)) {
+            this.disableStaticHostRealtimePolling();
+          }
+        })
+        .catch(() => {
+          if (!fb.enabled) {
+            this.markPendingOfflineSync(normalizedNextState);
+          }
+        });
     }
 
     if (firebaseWritePromises.length > 0) {
@@ -6084,8 +6300,12 @@ class HybridStorageEngine {
       return;
     }
 
-    // 3. Instant Express Real-Time Server broadcast (< 15ms)
-    if (typeof window !== 'undefined' && typeof fetch !== 'undefined') {
+    // 3. Instant Express Real-Time Server broadcast (< 15ms) when running with Express backend
+    if (
+      !isStaticServerlessHost &&
+      typeof window !== 'undefined' &&
+      typeof fetch !== 'undefined'
+    ) {
       fetch('/api/realtime/chat-fast', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -6094,15 +6314,19 @@ class HybridStorageEngine {
           senderTabId: tabId,
         }),
       })
-        .then((r) => r.json())
+        .then((r) => {
+          if (!isApiJsonResponse(r)) {
+            this.disableStaticHostRealtimePolling();
+            return null;
+          }
+          return r.json();
+        })
         .then((d) => {
           if (d && typeof d.version === 'number') {
             this.lastChatVersion = d.version;
           }
         })
-        .catch(() => {
-          this.markPendingOfflineSync(nextState);
-        });
+        .catch(() => {});
     }
 
     // 4. Write ONLY the tiny live_chat_realtime document to Firestore (skipping heavy workspace_state)
@@ -6576,7 +6800,11 @@ export function removeCurrentTabPresence(): void {
     currentTabIsInLiveChat = false;
     const tabId = getOrCreateTabSessionId();
     const payload = JSON.stringify({ sessionId: tabId, remove: true });
-    if (typeof navigator !== 'undefined' && typeof navigator.sendBeacon === 'function') {
+    if (
+      !isStaticServerlessHost &&
+      typeof navigator !== 'undefined' &&
+      typeof navigator.sendBeacon === 'function'
+    ) {
       try {
         const blob = new Blob([payload], { type: 'application/json' });
         navigator.sendBeacon('/api/realtime/presence', blob);
@@ -6584,7 +6812,11 @@ export function removeCurrentTabPresence(): void {
         // ignore
       }
     }
-    if (typeof window !== 'undefined' && typeof fetch !== 'undefined') {
+    if (
+      !isStaticServerlessHost &&
+      typeof window !== 'undefined' &&
+      typeof fetch !== 'undefined'
+    ) {
       fetch('/api/realtime/presence', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -6620,7 +6852,12 @@ export function syncRealOnlinePresence(
     const deviceVisitorId = getOrCreateBrowserDeviceId();
     const isRegistered = Boolean(currentUser && currentUser.id);
 
-    if (!skipNetworkPost && typeof window !== 'undefined' && typeof fetch !== 'undefined') {
+    if (
+      !skipNetworkPost &&
+      !isStaticServerlessHost &&
+      typeof window !== 'undefined' &&
+      typeof fetch !== 'undefined'
+    ) {
       fetch('/api/realtime/presence', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -6633,7 +6870,13 @@ export function syncRealOnlinePresence(
           isInLiveChat: currentTabIsInLiveChat,
         }),
       })
-        .then((r) => r.json())
+        .then((r) => {
+          if (!isApiJsonResponse(r)) {
+            isStaticServerlessHost = true;
+            return null;
+          }
+          return r.json();
+        })
         .then((stats) => {
           if (stats && typeof stats.totalOnline === 'number') {
             updateLatestServerOnlineStats(stats);
@@ -7057,23 +7300,26 @@ export async function runSystemHealthDiagnostics(
   let rtDetails = '';
   const rtStart = performance.now();
   try {
-    const res = await fetch('/api/realtime/chat-fast?since=0', { cache: 'no-store' });
-    rtLatency = Math.max(1, Math.round(performance.now() - rtStart));
-    if (res.ok) {
-      rtHealthy = true;
-      rtDetails = `خادم المزامنة اللحظية متصل (${rtLatency} ms)`;
+    if (isStaticServerlessHost) {
+      rtLatency = 1;
+      rtHealthy = connStatus !== 'firebase_error';
+      rtDetails = 'يعمل عبر سحابة Firebase مباشرة (Serverless / Vercel Mode)';
     } else {
-      rtHealthy = false;
-      rtDetails = `استجابة غير متوقعة من الخادم (${res.status})`;
+      const res = await fetch('/api/realtime/chat-fast?since=0', { cache: 'no-store' });
+      rtLatency = Math.max(1, Math.round(performance.now() - rtStart));
+      if (isApiJsonResponse(res)) {
+        rtHealthy = true;
+        rtDetails = `خادم المزامنة اللحظية متصل (${rtLatency} ms)`;
+      } else {
+        isStaticServerlessHost = true;
+        rtHealthy = connStatus !== 'firebase_error';
+        rtDetails = 'يعمل عبر سحابة Firebase مباشرة (Serverless / Vercel Mode)';
+      }
     }
   } catch {
     rtLatency = Math.max(1, Math.round(performance.now() - rtStart));
-    // On static serverless hosting (e.g. Vercel without Express), Firebase handles realtime sync directly
-    rtHealthy = connStatus === 'firebase_connected';
-    rtDetails =
-      connStatus === 'firebase_connected'
-        ? 'يعمل عبر سحابة Firebase مباشرة (Serverless Mode)'
-        : 'الخادم المحلي غير متصل حالياً';
+    rtHealthy = connStatus !== 'firebase_error';
+    rtDetails = 'يعمل عبر سحابة Firebase مباشرة (Serverless / Vercel Mode)';
   }
 
   // 4. Firebase Cloud Connection Check

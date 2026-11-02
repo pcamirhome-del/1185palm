@@ -413,17 +413,28 @@ function mergeIntoCumulativeArchive(incoming: Record<string, unknown>) {
   }, 450);
 }
 
+const EMBEDDED_STATE_FILE_PATH = path.resolve(
+  process.cwd(),
+  'src',
+  'data',
+  'embeddedPortalState.json'
+);
+const PUBLIC_SEED_FILE_PATH = path.resolve(
+  process.cwd(),
+  'public',
+  'portal-seed-state.json'
+);
+
 function saveStateToDisk(state: Record<string, unknown>) {
   mergeIntoCumulativeArchive(state);
   if (diskSaveTimer) {
     clearTimeout(diskSaveTimer);
   }
   diskSaveTimer = setTimeout(() => {
-    fs.promises
-      .writeFile(STATE_FILE_PATH, JSON.stringify(state), 'utf-8')
-      .catch(() => {
-        // ignore disk write errors in read-only environments
-      });
+    const serialized = JSON.stringify(state);
+    fs.promises.writeFile(STATE_FILE_PATH, serialized, 'utf-8').catch(() => {});
+    fs.promises.writeFile(EMBEDDED_STATE_FILE_PATH, serialized, 'utf-8').catch(() => {});
+    fs.promises.writeFile(PUBLIC_SEED_FILE_PATH, serialized, 'utf-8').catch(() => {});
   }, 400);
 }
 
